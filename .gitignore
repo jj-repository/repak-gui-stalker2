@@ -14,6 +14,21 @@ modpack/
 # DLL files
 *.dll
 
+# Application files
+repak_gui_config.json
+repak_gui.log
+*.log
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
 # IDE
 .vscode/
 .idea/

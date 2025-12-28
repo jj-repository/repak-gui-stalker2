@@ -89,29 +89,72 @@ jobs:
           dist/linux/repak-gui
           dist/windows/repak-gui.exe
         body: |
-          ## Downloads
+          # Repak GUI v1.1.0 - Major Update! 🎉
+
+          A professional GUI wrapper for repak, designed for STALKER 2 modding.
+
+          ## 🆕 What's New in v1.1.0
+
+          ### User Experience
+          - ✨ **Keyboard Shortcuts** - Ctrl+O, Ctrl+E, Ctrl+L, Ctrl+Q, Escape
+          - 📋 **Recent Files** - Quick access to your last 10 PAK files
+          - 🛑 **Cancel Operations** - Stop long-running tasks anytime
+          - 🖱️ **Context Menus** - Right-click batch list for options
+          - 💾 **Configuration Persistence** - Window size and preferences saved
+
+          ### Advanced Features
+          - 📝 **File Logging** - All operations logged to `repak_gui.log`
+          - 📤 **Export Logs** - Save logs for troubleshooting
+          - 🔒 **Enhanced Security** - Path validation, AES key redaction
+          - ⚡ **Better Performance** - Optimized file operations
+
+          ### Developer Improvements
+          - 🔍 **Type Hints** - Full type annotations
+          - 🧪 **Unit Tests** - Comprehensive test coverage
+          - 📚 **Documentation** - Professional README and CHANGELOG
+
+          ## 📥 Downloads
 
           ### Windows
-          - **repak-gui.exe** - Windows executable
+          **[repak-gui.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/repak-gui.exe)**
+          - Download and run directly
+          - Includes all dependencies
 
           ### Linux
-          - **repak-gui** - Linux binary
+          **[repak-gui](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/repak-gui)**
+          - Download, make executable: `chmod +x repak-gui`
+          - Run: `./repak-gui`
 
-          ## Installation
+          ## 📖 Quick Start
 
-          ### Windows
-          1. Download repak-gui.exe
-          2. Run it
+          1. Download the appropriate version for your OS
+          2. Run the application
+          3. Use the **Unpack** tab to extract PAK files
+          4. Use the **Pack** tab to create your own PAKs
+          5. Use **Batch Unpack** for multiple files
 
-          ### Linux
-          1. Download the binary
-          2. Make it executable: `chmod +x repak-gui`
-          3. Run: `./repak-gui`
+          ## ⌨️ Keyboard Shortcuts
 
-          ## What's New
-          See commit history for detailed changes.
+          - `Ctrl+O` - Browse for PAK file
+          - `Ctrl+L` - Clear log
+          - `Ctrl+E` - Export log
+          - `Ctrl+Q` - Quit
+          - `Escape` - Cancel operation
+
+          ## 📝 Full Changelog
+
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for complete version history.
+
+          ## 🐛 Issues?
+
+          Report bugs at: https://github.com/${{ github.repository }}/issues
 
           ---
-          🤖 Built automatically with GitHub Actions
+
+          🤖 **Built automatically with GitHub Actions**
+
+          **Note**: You also need the `repak` binary in the same directory as this executable.
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

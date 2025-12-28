@@ -1,0 +1,12 @@
+# Repak GUI Requirements
+# Python 3.7+ required
+
+# Optional: For drag-and-drop support (install if needed)
+# tkinterdnd2>=0.3.0
+
+# Build dependencies (for creating executables)
+pyinstaller>=5.0.0
+
+# Development dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
