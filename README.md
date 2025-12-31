@@ -1,7 +1,6 @@
 # Repak GUI for STALKER 2
 
-A feature-rich graphical wrapper for [repak](https://github.com/trumank/repak) - an Unreal Engine .pak file tool, specifically designed for STALKER 2 modding.
-
+[![Build](https://github.com/jj-repository/repak-gui-stalker2/actions/workflows/build-release.yml/badge.svg)](https://github.com/jj-repository/repak-gui-stalker2/actions/workflows/build-release.yml)
 ![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![Python](https://img.shields.io/badge/python-3.7+-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
