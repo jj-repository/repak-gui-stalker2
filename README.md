@@ -1,6 +1,7 @@
 # Repak GUI for STALKER 2
 
 [![Build](https://github.com/jj-repository/repak-gui-stalker2/actions/workflows/build-release.yml/badge.svg)](https://github.com/jj-repository/repak-gui-stalker2/actions/workflows/build-release.yml)
+[![Downloads](https://img.shields.io/github/downloads/jj-repository/repak-gui-stalker2/total)](https://github.com/jj-repository/repak-gui-stalker2/releases)
 ![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![Python](https://img.shields.io/badge/python-3.7+-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
