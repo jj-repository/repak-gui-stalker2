@@ -4,16 +4,18 @@ Repak GUI - A simple GUI wrapper for repak (Unreal Engine .pak tool)
 Designed for STALKER 2 modding
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import subprocess
 import threading
 import os
+import sys
 import stat
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional, List, Callable, Dict, Any
 from datetime import datetime
@@ -34,23 +36,63 @@ PROGRESS_BAR_INTERVAL = 10
 LOG_FONT_SIZE = 9
 HASH_CHUNK_SIZE = 8192  # For file hashing operations
 
+# Process Constants
+SUBPROCESS_TIMEOUT = 3600  # 1 hour timeout for long operations
+PROCESS_POLL_INTERVAL = 0.1  # Seconds between process output polls
+IS_WINDOWS = sys.platform.startswith('win')
+
 # Configuration
 CONFIG_FILE = "repak_gui_config.json"
 LOG_FILE = "repak_gui.log"
 MAX_RECENT_FILES = 10
 
+# AES key validation pattern (hex or base64)
+AES_KEY_HEX_PATTERN = re.compile(r'^[0-9a-fA-F]{64}$')  # 256-bit hex
+AES_KEY_BASE64_PATTERN = re.compile(r'^[A-Za-z0-9+/]{43}=?$')  # Base64 256-bit
+
 
 def setup_logging():
-    """Setup logging configuration"""
+    """Setup logging configuration with log file in script directory"""
+    script_dir = Path(__file__).parent.resolve()
+    log_path = script_dir / LOG_FILE
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(LOG_FILE),
+            logging.FileHandler(log_path, encoding='utf-8'),
             logging.StreamHandler()
         ],
         force=True  # Override any existing configuration
     )
+
+
+def validate_aes_key(key: str) -> bool:
+    """
+    Validate AES key format (hex or base64).
+
+    Args:
+        key: The AES key string to validate
+
+    Returns:
+        True if key appears to be valid format, False otherwise
+    """
+    if not key:
+        return True  # Empty key is valid (means no encryption)
+
+    key = key.strip()
+    if not key:
+        return True  # Whitespace-only is treated as empty (no encryption)
+
+    # Check for 256-bit hex key (64 hex chars)
+    if AES_KEY_HEX_PATTERN.match(key):
+        return True
+    # Check for base64 encoded key
+    if AES_KEY_BASE64_PATTERN.match(key):
+        return True
+    # Also accept 0x prefixed hex
+    if key.startswith('0x') and AES_KEY_HEX_PATTERN.match(key[2:]):
+        return True
+    return False
 
 
 class RepakGUI:
@@ -60,9 +102,12 @@ class RepakGUI:
 
         # Find repak binary (same directory as script)
         self.script_dir = Path(__file__).parent.resolve()
-        self.repak_path = self.script_dir / "repak"
+        self.repak_path = self._find_repak_binary()
         self.config_path = self.script_dir / CONFIG_FILE
         self.log_path = self.script_dir / LOG_FILE
+
+        # Thread lock for shared state access
+        self._lock = threading.Lock()
 
         # Fixed output directories
         self.unpack_dir = self.script_dir / "unpackedfiles"
@@ -113,12 +158,28 @@ class RepakGUI:
 
         logging.info("RepakGUI initialized successfully")
 
+    def _find_repak_binary(self) -> Path:
+        """Find the repak binary, checking platform-specific names"""
+        if IS_WINDOWS:
+            # Try .exe first on Windows
+            exe_path = self.script_dir / "repak.exe"
+            if exe_path.exists():
+                return exe_path
+            # Fall back to no extension
+            return self.script_dir / "repak"
+        else:
+            return self.script_dir / "repak"
+
     def _validate_repak_binary(self) -> bool:
         """Validate that repak binary exists and is executable"""
-        if not self.repak_path.exists():
+        if not self.repak_path or not self.repak_path.exists():
             return False
 
-        # Check if file is executable
+        # On Windows, just check existence
+        if IS_WINDOWS:
+            return True
+
+        # On Unix, check if file is executable
         try:
             st = os.stat(self.repak_path)
             is_executable = bool(st.st_mode & stat.S_IXUSR)
@@ -126,47 +187,57 @@ class RepakGUI:
                 # Try to make it executable
                 os.chmod(self.repak_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             return True
-        except Exception:
+        except OSError as e:
+            logging.error(f"Failed to validate/chmod repak binary: {e}")
             return False
 
     def _load_config(self) -> None:
         """Load configuration from JSON file"""
-        default_config = {
+        default_config: Dict[str, Any] = {
             'window_geometry': f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}",
             'recent_files': [],
             'last_unpack_dir': '',
             'last_pack_dir': '',
-            'last_aes_key': ''
         }
+        # Note: AES keys are intentionally NOT stored in config for security
 
         try:
             if self.config_path.exists():
-                with open(self.config_path, 'r') as f:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
                     self.config = json.load(f)
+                    # Remove any legacy AES key storage for security
+                    if 'last_aes_key' in self.config:
+                        del self.config['last_aes_key']
+                        logging.info("Removed legacy AES key from config for security")
                     # Merge with defaults for any missing keys
                     for key, value in default_config.items():
                         if key not in self.config:
                             self.config[key] = value
-                    self.recent_files = self.config.get('recent_files', [])
+                    self.recent_files = list(self.config.get('recent_files', []))
                     logging.info("Configuration loaded successfully")
             else:
                 self.config = default_config
                 logging.info("No config file found, using defaults")
-        except Exception as e:
-            logging.error(f"Failed to load config: {e}")
+        except json.JSONDecodeError as e:
+            logging.error(f"Invalid JSON in config file: {e}")
+            self.config = default_config
+        except (IOError, OSError) as e:
+            logging.error(f"Failed to read config file: {e}")
             self.config = default_config
 
     def _save_config(self) -> None:
         """Save configuration to JSON file"""
         try:
-            # Update config with current state
-            self.config['window_geometry'] = self.root.geometry()
-            self.config['recent_files'] = self.recent_files[:MAX_RECENT_FILES]
+            # Update config with current state (thread-safe)
+            with self._lock:
+                self.config['window_geometry'] = self.root.geometry()
+                self.config['recent_files'] = self.recent_files[:MAX_RECENT_FILES]
+                config_copy = dict(self.config)
 
-            with open(self.config_path, 'w') as f:
-                json.dump(self.config, f, indent=2)
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_copy, f, indent=2)
             logging.info("Configuration saved successfully")
-        except Exception as e:
+        except (IOError, OSError) as e:
             logging.error(f"Failed to save config: {e}")
 
     def _on_closing(self) -> None:
@@ -205,12 +276,14 @@ class RepakGUI:
         logging.info("Keyboard shortcuts configured")
 
     def _add_to_recent_files(self, filepath: str) -> None:
-        """Add a file to the recent files list"""
-        if filepath in self.recent_files:
-            self.recent_files.remove(filepath)
-        self.recent_files.insert(0, filepath)
-        self.recent_files = self.recent_files[:MAX_RECENT_FILES]
-        self._update_recent_files_menu()
+        """Add a file to the recent files list (thread-safe)"""
+        with self._lock:
+            if filepath in self.recent_files:
+                self.recent_files.remove(filepath)
+            self.recent_files.insert(0, filepath)
+            self.recent_files = self.recent_files[:MAX_RECENT_FILES]
+        # Schedule UI update on main thread
+        self.root.after(0, self._update_recent_files_menu)
 
     def _update_recent_files_menu(self) -> None:
         """Update the recent files menu"""
@@ -718,44 +791,75 @@ https://github.com/trumank/repak
         # Reset cancellation flag
         self.cancel_requested = False
 
+        # Validate AES key if provided
+        aes_key = self.aes_key_var.get().strip()
+        if aes_key and not validate_aes_key(aes_key):
+            self.log("⚠️ Warning: AES key format may be invalid (expected 64 hex chars or base64)")
+            logging.warning("AES key format validation failed")
+
         def _run():
             cmd = [str(self.repak_path)] + args
 
             # Add AES key if provided
-            aes_key = self.aes_key_var.get().strip()
             if aes_key:
                 cmd.extend(["--aes-key", aes_key])
 
             # Log command with AES key redacted for security
-            self.log(f"Running: {self._redact_aes_key(cmd)}")
-            self.log("-" * 50)
+            self.root.after(0, self.log, f"Running: {self._redact_aes_key(cmd)}")
+            self.root.after(0, self.log, "-" * 50)
             logging.info(f"Executing command: {self._redact_aes_key(cmd)}")
 
+            process = None
             try:
+                # Use CREATE_NO_WINDOW on Windows to hide console
+                creationflags = 0
+                if IS_WINDOWS:
+                    creationflags = subprocess.CREATE_NO_WINDOW
+
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    cwd=self.script_dir
+                    cwd=self.script_dir,
+                    creationflags=creationflags
                 )
 
                 # Track the current process for cancellation
                 self.current_process = process
 
-                for line in iter(process.stdout.readline, ''):
-                    # Check for cancellation
-                    if self.cancel_requested:
-                        process.terminate()
-                        self.root.after(0, self.log, "\n⚠️ Operation cancelled by user")
-                        self.root.after(0, self.hide_progress)
-                        if callback:
-                            self.root.after(0, callback, False)
-                        return
+                # Read output if stdout is available
+                if process.stdout:
+                    for line in iter(process.stdout.readline, ''):
+                        # Check for cancellation
+                        if self.cancel_requested:
+                            process.terminate()
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                            self.root.after(0, self.log, "\n⚠️ Operation cancelled by user")
+                            self.root.after(0, self.hide_progress)
+                            if callback:
+                                self.root.after(0, callback, False)
+                            return
 
-                    self.root.after(0, self.log, line.rstrip())
+                        self.root.after(0, self.log, line.rstrip())
 
-                process.wait()
+                    # Explicitly close stdout
+                    process.stdout.close()
+
+                # Wait for process with timeout
+                try:
+                    process.wait(timeout=SUBPROCESS_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    self.root.after(0, self.log, f"\n✗ Process timed out after {SUBPROCESS_TIMEOUT}s")
+                    self.root.after(0, self.hide_progress)
+                    logging.error(f"Process timed out after {SUBPROCESS_TIMEOUT}s")
+                    if callback:
+                        self.root.after(0, callback, False)
+                    return
 
                 if process.returncode == 0:
                     self.root.after(0, self.log, "\n✓ Success!")
@@ -770,6 +874,24 @@ https://github.com/trumank/repak
                     if callback:
                         self.root.after(0, callback, False)
 
+            except FileNotFoundError:
+                self.root.after(0, self.log, f"\n✗ Error: repak binary not found at {self.repak_path}")
+                self.root.after(0, self.hide_progress)
+                logging.error(f"repak binary not found: {self.repak_path}")
+                if callback:
+                    self.root.after(0, callback, False)
+            except PermissionError as e:
+                self.root.after(0, self.log, f"\n✗ Permission error: {str(e)}")
+                self.root.after(0, self.hide_progress)
+                logging.error(f"Permission error: {e}")
+                if callback:
+                    self.root.after(0, callback, False)
+            except OSError as e:
+                self.root.after(0, self.log, f"\n✗ OS error: {str(e)}")
+                self.root.after(0, self.hide_progress)
+                logging.error(f"OS error: {e}")
+                if callback:
+                    self.root.after(0, callback, False)
             except Exception as e:
                 self.root.after(0, self.log, f"\n✗ Error: {str(e)}")
                 self.root.after(0, self.hide_progress)
@@ -778,6 +900,15 @@ https://github.com/trumank/repak
                     self.root.after(0, callback, False)
             finally:
                 self.current_process = None
+                # Ensure process is cleaned up
+                if process is not None:
+                    try:
+                        if process.stdout and not process.stdout.closed:
+                            process.stdout.close()
+                        if process.poll() is None:
+                            process.terminate()
+                    except Exception:
+                        pass
 
         thread = threading.Thread(target=_run, daemon=True)
         self.operation_thread = thread
@@ -902,7 +1033,7 @@ https://github.com/trumank/repak
         self.run_repak(["list", str(validated_path)])
 
     def do_batch_unpack(self):
-        """Unpack all files in the batch list sequentially"""
+        """Unpack all files in the batch list sequentially with cancellation support"""
         if not self.batch_pak_files:
             messagebox.showwarning("Warning", "Please add pak files to unpack.")
             return
@@ -928,6 +1059,14 @@ https://github.com/trumank/repak
             messagebox.showwarning("Warning", "No valid pak files to unpack.")
             return
 
+        # Reset cancellation flag
+        self.cancel_requested = False
+
+        # Get AES key once before starting
+        aes_key = self.aes_key_var.get().strip()
+        if aes_key and not validate_aes_key(aes_key):
+            self.log("⚠️ Warning: AES key format may be invalid")
+
         self.log(f"Starting batch unpack of {len(validated_files)} file(s)...")
         self.log("=" * 50)
         self.show_progress("Starting batch unpack...")
@@ -937,8 +1076,20 @@ https://github.com/trumank/repak
             total = len(validated_files)
             success_count = 0
             fail_count = 0
+            skipped_count = 0
+
+            # Use CREATE_NO_WINDOW on Windows
+            creationflags = 0
+            if IS_WINDOWS:
+                creationflags = subprocess.CREATE_NO_WINDOW
 
             for i, pak_file in enumerate(validated_files, 1):
+                # Check for cancellation before starting each file
+                if self.cancel_requested:
+                    skipped_count = total - i + 1
+                    self.root.after(0, self.log, f"\n⚠️ Batch cancelled. Skipped {skipped_count} file(s).")
+                    break
+
                 pak_name = pak_file.stem
                 output_dir = self.unpack_dir / pak_name
 
@@ -947,24 +1098,43 @@ https://github.com/trumank/repak
 
                 cmd = [str(self.repak_path), "unpack", str(pak_file), "--output", str(output_dir)]
 
-                # Add AES key if provided
-                aes_key = self.aes_key_var.get().strip()
                 if aes_key:
                     cmd.extend(["--aes-key", aes_key])
 
+                process = None
                 try:
                     process = subprocess.Popen(
                         cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
-                        cwd=self.script_dir
+                        cwd=self.script_dir,
+                        creationflags=creationflags
                     )
 
-                    for line in iter(process.stdout.readline, ''):
-                        self.root.after(0, self.log, line.rstrip())
+                    self.current_process = process
 
-                    process.wait()
+                    if process.stdout:
+                        for line in iter(process.stdout.readline, ''):
+                            # Check for cancellation during output reading
+                            if self.cancel_requested:
+                                process.terminate()
+                                try:
+                                    process.wait(timeout=5)
+                                except subprocess.TimeoutExpired:
+                                    process.kill()
+                                skipped_count = total - i
+                                self.root.after(0, self.log, f"\n⚠️ Cancelled during {pak_name}. Skipped {skipped_count} remaining file(s).")
+                                break
+                            self.root.after(0, self.log, line.rstrip())
+
+                        process.stdout.close()
+
+                    # Break out of main loop if cancelled
+                    if self.cancel_requested:
+                        break
+
+                    process.wait(timeout=SUBPROCESS_TIMEOUT)
 
                     if process.returncode == 0:
                         self.root.after(0, self.log, f"  -> Success: {output_dir}")
@@ -973,17 +1143,43 @@ https://github.com/trumank/repak
                         self.root.after(0, self.log, f"  -> Failed with exit code {process.returncode}")
                         fail_count += 1
 
+                except subprocess.TimeoutExpired:
+                    if process:
+                        process.kill()
+                    self.root.after(0, self.log, f"  -> Timeout: process killed")
+                    fail_count += 1
+                except FileNotFoundError:
+                    self.root.after(0, self.log, f"  -> Error: repak binary not found")
+                    fail_count += 1
                 except Exception as e:
                     self.root.after(0, self.log, f"  -> Error: {str(e)}")
                     fail_count += 1
+                finally:
+                    self.current_process = None
+                    if process is not None:
+                        try:
+                            if process.stdout and not process.stdout.closed:
+                                process.stdout.close()
+                            if process.poll() is None:
+                                process.terminate()
+                        except Exception:
+                            pass
 
             # Summary
             self.root.after(0, self.log, "\n" + "=" * 50)
-            self.root.after(0, self.log, f"Batch unpack complete: {success_count} succeeded, {fail_count} failed")
+            summary = f"Batch unpack complete: {success_count} succeeded, {fail_count} failed"
+            if skipped_count > 0:
+                summary += f", {skipped_count} skipped"
+            self.root.after(0, self.log, summary)
             self.root.after(0, self.hide_progress)
+            logging.info(summary)
 
             # Show completion dialog
-            if fail_count == 0:
+            if self.cancel_requested:
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Batch Unpack Cancelled",
+                    f"Operation cancelled by user.\n\n{success_count} succeeded, {fail_count} failed, {skipped_count} skipped."))
+            elif fail_count == 0:
                 self.root.after(0, lambda: messagebox.showinfo(
                     "Batch Unpack Complete",
                     f"Successfully unpacked {success_count} file(s).\n\nOutput: {self.unpack_dir}"))
@@ -993,6 +1189,7 @@ https://github.com/trumank/repak
                     f"Completed with errors.\n\n{success_count} succeeded, {fail_count} failed.\n\nCheck the log for details."))
 
         thread = threading.Thread(target=_batch_run, daemon=True)
+        self.operation_thread = thread
         thread.start()
 
 
