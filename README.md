@@ -227,21 +227,25 @@ pytest test_repak_gui.py -v
 
 ## 🌟 Features Comparison
 
-| Feature | v1.0.0 | v1.1.0 |
-|---------|---------|---------|
-| Basic unpack/pack | ✅ | ✅ |
-| Batch operations | ✅ | ✅ |
-| AES encryption | ✅ | ✅ |
-| Recent files | ❌ | ✅ |
-| Keyboard shortcuts | ❌ | ✅ |
-| Operation cancellation | ❌ | ✅ |
-| File-based logging | ❌ | ✅ |
-| Export logs | ❌ | ✅ |
-| Context menus | ❌ | ✅ |
-| Configuration persistence | ❌ | ✅ |
-| Security hardening | ⚠️ Basic | ✅ Advanced |
-| Type hints | ❌ | ✅ |
-| Unit tests | ❌ | ✅ |
+| Feature | v1.0.0 | v1.1.0 | v1.2.0 |
+|---------|---------|---------|---------|
+| Basic unpack/pack | ✅ | ✅ | ✅ |
+| Batch operations | ✅ | ✅ | ✅ |
+| AES encryption | ✅ | ✅ | ✅ |
+| Recent files | ❌ | ✅ | ✅ |
+| Keyboard shortcuts | ❌ | ✅ | ✅ |
+| Operation cancellation | ❌ | ✅ | ✅ |
+| File-based logging | ❌ | ✅ | ✅ |
+| Export logs | ❌ | ✅ | ✅ |
+| Context menus | ❌ | ✅ | ✅ |
+| Configuration persistence | ❌ | ✅ | ✅ |
+| Security hardening | ⚠️ Basic | ✅ Advanced | ✅ Advanced |
+| Type hints | ❌ | ✅ | ✅ |
+| Unit tests | ❌ | ✅ | ✅ (31 tests) |
+| AES key validation | ❌ | ❌ | ✅ |
+| Windows full compatibility | ⚠️ Partial | ⚠️ Partial | ✅ Full |
+| Thread safety locks | ❌ | ❌ | ✅ |
+| Subprocess timeout protection | ❌ | ❌ | ✅ |
 
 ## 📞 Support
 

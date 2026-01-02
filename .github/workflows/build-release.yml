@@ -91,11 +91,11 @@ jobs:
           dist/linux/repak-gui
           dist/windows/repak-gui.exe
         body: |
-          # Repak GUI v1.1.0 - Major Update! 🎉
+          # Repak GUI ${{ github.ref_name }}
 
           A professional GUI wrapper for repak, designed for STALKER 2 modding.
 
-          ## 🆕 What's New in v1.1.0
+          ## 🆕 What's New
 
           ### User Experience
           - ✨ **Keyboard Shortcuts** - Ctrl+O, Ctrl+E, Ctrl+L, Ctrl+Q, Escape
