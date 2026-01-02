@@ -31,7 +31,7 @@ jobs:
         pyinstaller --onefile --name repak-gui repak_gui.py
 
     - name: Upload Linux artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: linux-executable
         path: dist/repak-gui
@@ -57,7 +57,7 @@ jobs:
         pyinstaller --onefile --windowed --name repak-gui repak_gui.py
 
     - name: Upload Windows artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: windows-executable
         path: dist/repak-gui.exe
