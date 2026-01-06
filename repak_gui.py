@@ -4,7 +4,7 @@ Repak GUI - A simple GUI wrapper for repak (Unreal Engine .pak tool)
 Designed for STALKER 2 modding
 """
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -16,6 +16,7 @@ import stat
 import json
 import logging
 import re
+import atexit
 from pathlib import Path
 from typing import Optional, List, Callable, Dict, Any
 from datetime import datetime
@@ -34,7 +35,6 @@ MIN_WINDOW_WIDTH = 600
 MIN_WINDOW_HEIGHT = 400
 PROGRESS_BAR_INTERVAL = 10
 LOG_FONT_SIZE = 9
-HASH_CHUNK_SIZE = 8192  # For file hashing operations
 
 # Process Constants
 SUBPROCESS_TIMEOUT = 3600  # 1 hour timeout for long operations
@@ -50,18 +50,35 @@ MAX_RECENT_FILES = 10
 AES_KEY_HEX_PATTERN = re.compile(r'^[0-9a-fA-F]{64}$')  # 256-bit hex
 AES_KEY_BASE64_PATTERN = re.compile(r'^[A-Za-z0-9+/]{43}=?$')  # Base64 256-bit
 
+# Update Constants
+GITHUB_REPO = "jj-repository/repak-gui-stalker2"
+GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
+GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}"
+
 
 def setup_logging():
-    """Setup logging configuration with log file in script directory"""
+    """Setup logging configuration with log file in script directory using rotation"""
+    from logging.handlers import RotatingFileHandler
     script_dir = Path(__file__).parent.resolve()
     log_path = script_dir / LOG_FILE
+
+    # Use RotatingFileHandler to prevent unbounded log growth
+    # Max 5MB per file, keep 3 backup files
+    file_handler = RotatingFileHandler(
+        log_path,
+        maxBytes=5*1024*1024,  # 5MB
+        backupCount=3,
+        encoding='utf-8'
+    )
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_path, encoding='utf-8'),
-            logging.StreamHandler()
-        ],
+        handlers=[file_handler, stream_handler],
         force=True  # Override any existing configuration
     )
 
@@ -129,6 +146,10 @@ class RepakGUI:
 
         # Apply window geometry from config or defaults
         geometry = self.config.get('window_geometry', f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        # Validate geometry string format (WIDTHxHEIGHT or WIDTHxHEIGHT+X+Y)
+        if not re.match(r'^\d+x\d+([+-]\d+[+-]\d+)?$', geometry):
+            logging.warning(f"Invalid geometry string '{geometry}', using defaults")
+            geometry = f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}"
         self.root.geometry(geometry)
         self.root.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
 
@@ -155,6 +176,14 @@ class RepakGUI:
 
         # Save config on close
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+        # Register cleanup for unexpected exits (e.g., SIGTERM, crash)
+        atexit.register(self._cleanup_subprocess)
+
+        # Check for updates on startup if enabled (delay to let UI initialize)
+        if self.config.get('auto_check_updates', True):
+            self.root.after(2000, lambda: threading.Thread(
+                target=self._check_for_updates, args=(True,), daemon=True).start())
 
         logging.info("RepakGUI initialized successfully")
 
@@ -198,6 +227,7 @@ class RepakGUI:
             'recent_files': [],
             'last_unpack_dir': '',
             'last_pack_dir': '',
+            'auto_check_updates': True,
         }
         # Note: AES keys are intentionally NOT stored in config for security
 
@@ -226,7 +256,7 @@ class RepakGUI:
             self.config = default_config
 
     def _save_config(self) -> None:
-        """Save configuration to JSON file"""
+        """Save configuration to JSON file using atomic write"""
         try:
             # Update config with current state (thread-safe)
             with self._lock:
@@ -234,27 +264,65 @@ class RepakGUI:
                 self.config['recent_files'] = self.recent_files[:MAX_RECENT_FILES]
                 config_copy = dict(self.config)
 
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            # Write to temp file first, then rename atomically to prevent corruption
+            temp_path = self.config_path.with_suffix('.json.tmp')
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(config_copy, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())  # Ensure data is written to disk
+
+            # Atomic rename
+            if IS_WINDOWS:
+                # Windows: use os.replace which is atomic when on same filesystem
+                # This avoids the race condition of unlink+rename
+                import os
+                os.replace(str(temp_path), str(self.config_path))
+            else:
+                temp_path.rename(self.config_path)
             logging.info("Configuration saved successfully")
         except (IOError, OSError) as e:
             logging.error(f"Failed to save config: {e}")
+            # Clean up temp file if it exists
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except Exception:
+                pass
 
     def _on_closing(self) -> None:
         """Handle window close event"""
         # Save configuration
         self._save_config()
 
-        # Cancel any running operations
-        if self.current_process:
+        # Cancel any running operations (thread-safe)
+        with self._lock:
             self.cancel_requested = True
+            process_to_terminate = self.current_process
+
+        if process_to_terminate:
             try:
-                self.current_process.terminate()
-            except Exception:
-                pass
+                process_to_terminate.terminate()
+            except (OSError, ProcessLookupError) as e:
+                logging.debug(f"Process already terminated: {e}")
+            except Exception as e:
+                logging.error(f"Error terminating process on close: {e}")
 
         # Destroy window
         self.root.destroy()
+
+    def _cleanup_subprocess(self) -> None:
+        """Cleanup any running subprocess on unexpected exit (atexit handler)"""
+        with self._lock:
+            process_to_terminate = self.current_process
+            self.cancel_requested = True
+
+        if process_to_terminate:
+            try:
+                if process_to_terminate.poll() is None:
+                    process_to_terminate.terminate()
+                    process_to_terminate.wait(timeout=2)
+            except Exception:
+                pass  # Best effort cleanup
 
     def _setup_keyboard_shortcuts(self) -> None:
         """Setup keyboard shortcuts"""
@@ -310,19 +378,29 @@ class RepakGUI:
             self._update_recent_files_menu()
 
     def cancel_operation(self) -> None:
-        """Request cancellation of current operation"""
-        if self.current_process or self.operation_thread:
-            self.cancel_requested = True
-            self.log("⚠️ Cancellation requested...")
-            logging.info("User requested operation cancellation")
+        """Request cancellation of current operation (thread-safe)"""
+        with self._lock:
+            has_active_operation = self.current_process or self.operation_thread
+            if has_active_operation:
+                self.cancel_requested = True
+                process_to_terminate = self.current_process
+            else:
+                return  # Nothing to cancel
 
-            if self.current_process:
-                try:
-                    self.current_process.terminate()
-                    self.log("✓ Operation cancelled")
-                except Exception as e:
-                    self.log(f"Error cancelling operation: {e}")
-                    logging.error(f"Error cancelling operation: {e}")
+        # Log outside lock to avoid holding it during I/O
+        self.log("⚠️ Cancellation requested...")
+        logging.info("User requested operation cancellation")
+
+        if process_to_terminate:
+            try:
+                process_to_terminate.terminate()
+                self.log("✓ Operation cancelled")
+            except (OSError, ProcessLookupError) as e:
+                logging.debug(f"Process already terminated: {e}")
+                self.log("✓ Operation cancelled (process already finished)")
+            except Exception as e:
+                self.log(f"Error cancelling operation: {e}")
+                logging.error(f"Error cancelling operation: {e}")
 
     def export_log(self) -> None:
         """Export the current log to a text file"""
@@ -336,7 +414,7 @@ class RepakGUI:
 
             if filename:
                 log_content = self.log_text.get(1.0, tk.END)
-                with open(filename, 'w') as f:
+                with open(filename, 'w', encoding='utf-8') as f:
                     f.write(log_content)
                 messagebox.showinfo("Export Complete",
                     f"Log exported successfully to:\n{filename}")
@@ -380,6 +458,19 @@ Built on top of repak by trumank
 https://github.com/trumank/repak
 """
         messagebox.showinfo("About Repak GUI", about_text)
+
+    def _toggle_aes_visibility(self) -> None:
+        """Toggle visibility of AES key entry field"""
+        if self.aes_show_var.get():
+            # Currently showing, hide it
+            self.aes_entry.config(show='*')
+            self.aes_toggle_btn.config(text="Show")
+            self.aes_show_var.set(False)
+        else:
+            # Currently hidden, show it
+            self.aes_entry.config(show='')
+            self.aes_toggle_btn.config(text="Hide")
+            self.aes_show_var.set(True)
 
     def _validate_path(self, path_str: str, must_exist: bool = True) -> Optional[Path]:
         """
@@ -455,6 +546,8 @@ https://github.com/trumank/repak
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Check for Updates", command=self._check_for_updates_clicked)
+        help_menu.add_separator()
         help_menu.add_command(label="Keyboard Shortcuts", command=self._show_shortcuts)
         help_menu.add_separator()
         help_menu.add_command(label="About", command=self._show_about)
@@ -493,8 +586,13 @@ https://github.com/trumank/repak
 
         self.aes_key_var = tk.StringVar()
         ttk.Label(aes_frame, text="Key (base64 or hex):").pack(side=tk.LEFT)
-        self.aes_entry = ttk.Entry(aes_frame, textvariable=self.aes_key_var, width=60)
+        self.aes_entry = ttk.Entry(aes_frame, textvariable=self.aes_key_var, width=60, show='*')
         self.aes_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+
+        # Toggle button to show/hide AES key
+        self.aes_show_var = tk.BooleanVar(value=False)
+        self.aes_toggle_btn = ttk.Button(aes_frame, text="Show", width=6, command=self._toggle_aes_visibility)
+        self.aes_toggle_btn.pack(side=tk.LEFT, padx=(5, 0))
 
         # Progress bar (initially hidden)
         self.progress_frame = ttk.Frame(main_frame)
@@ -703,8 +801,10 @@ https://github.com/trumank/repak
         selected = self.batch_listbox.curselection()
         # Remove in reverse order to preserve indices
         for index in reversed(selected):
-            self.batch_listbox.delete(index)
-            del self.batch_pak_files[index]
+            # Bounds check before deletion
+            if 0 <= index < len(self.batch_pak_files):
+                self.batch_listbox.delete(index)
+                del self.batch_pak_files[index]
         self.update_batch_count()
 
     def batch_clear_all(self):
@@ -914,7 +1014,19 @@ https://github.com/trumank/repak
         self.operation_thread = thread
         thread.start()
 
+    def _is_operation_running(self) -> bool:
+        """Check if an operation is currently running"""
+        with self._lock:
+            return self.current_process is not None or (
+                self.operation_thread is not None and self.operation_thread.is_alive()
+            )
+
     def do_unpack(self) -> None:
+        # Check if an operation is already running
+        if self._is_operation_running():
+            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            return
+
         pak_file = self.unpack_pak_var.get().strip()
 
         if not pak_file:
@@ -958,6 +1070,11 @@ https://github.com/trumank/repak
         self.run_repak(args, callback=on_complete)
 
     def do_pack(self):
+        # Check if an operation is already running
+        if self._is_operation_running():
+            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            return
+
         source_dir = self.pack_source_var.get().strip()
         pak_name = self.pack_name_var.get().strip()
 
@@ -1001,6 +1118,11 @@ https://github.com/trumank/repak
         self.run_repak(args, callback=on_complete)
 
     def do_info(self):
+        # Check if an operation is already running
+        if self._is_operation_running():
+            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            return
+
         pak_file = self.info_pak_var.get().strip()
 
         if not pak_file:
@@ -1017,6 +1139,11 @@ https://github.com/trumank/repak
         self.run_repak(["info", str(validated_path)])
 
     def do_list(self):
+        # Check if an operation is already running
+        if self._is_operation_running():
+            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            return
+
         pak_file = self.info_pak_var.get().strip()
 
         if not pak_file:
@@ -1191,6 +1318,144 @@ https://github.com/trumank/repak
         thread = threading.Thread(target=_batch_run, daemon=True)
         self.operation_thread = thread
         thread.start()
+
+    # Update feature methods
+    def _version_newer(self, latest: str, current: str) -> bool:
+        """Compare version strings to check if latest is newer than current."""
+        try:
+            latest_parts = tuple(map(int, latest.split('.')))
+            current_parts = tuple(map(int, current.split('.')))
+            return latest_parts > current_parts
+        except (ValueError, AttributeError):
+            return False
+
+    def _check_for_updates_clicked(self) -> None:
+        """Handle Check for Updates menu click."""
+        threading.Thread(target=self._check_for_updates, args=(False,), daemon=True).start()
+
+    def _check_for_updates(self, silent: bool = True) -> None:
+        """Check GitHub for new version.
+
+        Args:
+            silent: If True, don't show dialog when up-to-date or on error
+        """
+        import urllib.request
+        import urllib.error
+
+        try:
+            logging.info("Checking for updates...")
+
+            request = urllib.request.Request(
+                GITHUB_API_LATEST,
+                headers={'User-Agent': f'RepakGUI/{__version__}'}
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                data = json.loads(response.read().decode())
+
+            latest_version = data.get('tag_name', '').lstrip('v')
+
+            if not latest_version:
+                raise ValueError("No version tag found in release")
+
+            logging.info(f"Current version: {__version__}, Latest version: {latest_version}")
+
+            if self._version_newer(latest_version, __version__):
+                self.root.after(0, lambda: self._show_update_dialog(latest_version, data))
+            elif not silent:
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Up to Date",
+                    f"You are running the latest version (v{__version__})."
+                ))
+
+        except urllib.error.URLError as e:
+            logging.error(f"Network error checking for updates: {e}")
+            if not silent:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Update Error",
+                    f"Failed to check for updates:\n{e}"
+                ))
+        except Exception as e:
+            logging.error(f"Error checking for updates: {e}")
+            if not silent:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Update Error",
+                    f"Failed to check for updates:\n{e}"
+                ))
+
+    def _show_update_dialog(self, latest_version: str, release_data: dict) -> None:
+        """Show update available dialog with options."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Update Available")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.geometry("400x200")
+        dialog.resizable(False, False)
+
+        msg = f"A new version is available!\n\nCurrent: v{__version__}\nLatest: v{latest_version}\n\nWould you like to update?"
+        ttk.Label(dialog, text=msg, justify=tk.CENTER, wraplength=350).pack(pady=20)
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+
+        def update_now():
+            dialog.destroy()
+            threading.Thread(target=self._apply_update, args=(release_data,), daemon=True).start()
+
+        def open_releases():
+            dialog.destroy()
+            import webbrowser
+            webbrowser.open(GITHUB_RELEASES_URL)
+
+        ttk.Button(btn_frame, text="Update Now", command=update_now).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Open Releases", command=open_releases).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Later", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() - dialog.winfo_width()) // 2
+        y = (dialog.winfo_screenheight() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+    def _apply_update(self, release_data: dict) -> None:
+        """Download and apply update."""
+        import urllib.request
+        import urllib.error
+        import shutil
+        import tempfile
+
+        try:
+            tag_name = release_data.get('tag_name', 'main')
+            download_url = f"{GITHUB_RAW_URL}/{tag_name}/repak_gui.py"
+            logging.info(f"Downloading update from: {download_url}")
+
+            request = urllib.request.Request(
+                download_url,
+                headers={'User-Agent': f'RepakGUI/{__version__}'}
+            )
+
+            with tempfile.NamedTemporaryFile(mode='wb', suffix='.py', delete=False) as tmp_file:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    tmp_file.write(response.read())
+                tmp_path = tmp_file.name
+
+            current_script = Path(__file__).resolve()
+            backup_path = current_script.with_suffix('.py.backup')
+            shutil.copy2(current_script, backup_path)
+            logging.info(f"Created backup at: {backup_path}")
+
+            shutil.move(tmp_path, current_script)
+            logging.info(f"Updated script at: {current_script}")
+
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Update Complete",
+                "Update downloaded successfully!\n\nPlease restart the application to apply the update."
+            ))
+
+        except Exception as e:
+            logging.error(f"Error applying update: {e}")
+            self.root.after(0, lambda: messagebox.showerror(
+                "Update Failed",
+                f"Failed to download update:\n{e}"
+            ))
 
 
 def main():
