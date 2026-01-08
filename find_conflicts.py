@@ -161,14 +161,22 @@ def copy_conflicts_to_folders(conflicts: Dict[str, Dict[str, Any]]) -> Optional[
         try:
             # Create folder for this file (remove extension for folder name)
             folder_name = filename.rsplit('.', 1)[0] if '.' in filename else filename
+            # Sanitize folder name to prevent directory traversal
+            folder_name = folder_name.replace('/', '_').replace('\\', '_').replace('..', '_')
             conflict_folder = CONFLICTS_DIR / folder_name
             conflict_folder.mkdir(exist_ok=True)
 
             # Copy each version with mod name prefix
             for occ in info['occurrences']:
                 # Sanitize mod name for filename (remove path separators and other problematic chars)
-                safe_mod_name = occ['mod'].replace('/', '_').replace('\\', '_').replace(':', '_')
-                dest_name = f"{safe_mod_name}__{filename}"
+                safe_mod_name = (occ['mod']
+                    .replace('/', '_')
+                    .replace('\\', '_')
+                    .replace(':', '_')
+                    .replace('..', '_'))  # Prevent directory traversal patterns
+                # Also sanitize the filename in case of malicious names
+                safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+                dest_name = f"{safe_mod_name}__{safe_filename}"
                 dest_path = conflict_folder / dest_name
 
                 try:
