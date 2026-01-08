@@ -38,6 +38,22 @@
 
 ## 📋 Requirements
 
+### For Pre-built Releases (Recommended)
+- **Linux**: Just download and run - fully self-contained!
+- **Windows**: Requires `oo2core_9_win64.dll` (see below)
+
+### Windows: Required DLL
+
+Windows users must place `oo2core_9_win64.dll` in the same directory as `repak-gui.exe`.
+
+**Where to find it:**
+1. Navigate to your STALKER 2 installation folder
+2. Go to `Stalker2/Content/Paks/`
+3. Copy `oo2core_9_win64.dll` to the same folder as `repak-gui.exe`
+
+> **Note**: This DLL is a proprietary Oodle compression library from Epic Games and cannot be bundled with the release due to licensing restrictions. It's required for handling STALKER 2's compressed pak files.
+
+### For Running from Source
 - Python 3.7 or higher
 - tkinter (usually included with Python)
 - repak binary (included in this repository)
@@ -171,7 +187,7 @@ The launcher will auto-detect your package manager and offer to install:
 - **Fedora**: `sudo dnf install python3-tkinter`
 
 ### Windows: Missing DLL
-Ensure `oo2core_9_win64.dll` is in the same directory as the executable.
+Copy `oo2core_9_win64.dll` from your STALKER 2 installation (`Stalker2/Content/Paks/`) to the same directory as `repak-gui.exe`. See the Requirements section above for details.
 
 ### Operation Fails
 1. Check the log output in the application
