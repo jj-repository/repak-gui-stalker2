@@ -125,6 +125,7 @@ class RepakGUI:
 
         # Thread lock for shared state access
         self._lock = threading.Lock()
+        self._operation_in_progress = False  # Flag for atomic operation start check
 
         # Fixed output directories
         self.unpack_dir = self.script_dir / "unpackedfiles"
@@ -257,37 +258,39 @@ class RepakGUI:
 
     def _save_config(self) -> None:
         """Save configuration to JSON file using atomic write"""
+        temp_path = None
         try:
-            # Update config with current state (thread-safe)
+            # Update config with current state and perform file write within lock
+            # to prevent concurrent saves from corrupting data
             with self._lock:
                 self.config['window_geometry'] = self.root.geometry()
                 self.config['recent_files'] = self.recent_files[:MAX_RECENT_FILES]
                 config_copy = dict(self.config)
 
-            # Write to temp file first, then rename atomically to prevent corruption
-            temp_path = self.config_path.with_suffix('.json.tmp')
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                json.dump(config_copy, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())  # Ensure data is written to disk
+                # Write to temp file first, then rename atomically to prevent corruption
+                temp_path = self.config_path.with_suffix('.json.tmp')
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    json.dump(config_copy, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())  # Ensure data is written to disk
 
-            # Atomic rename
-            if IS_WINDOWS:
-                # Windows: use os.replace which is atomic when on same filesystem
-                # This avoids the race condition of unlink+rename
-                import os
-                os.replace(str(temp_path), str(self.config_path))
-            else:
-                temp_path.rename(self.config_path)
+                # Atomic rename
+                if IS_WINDOWS:
+                    # Windows: use os.replace which is atomic when on same filesystem
+                    os.replace(str(temp_path), str(self.config_path))
+                else:
+                    temp_path.rename(self.config_path)
+                temp_path = None  # Mark as successfully moved
             logging.info("Configuration saved successfully")
         except (IOError, OSError) as e:
             logging.error(f"Failed to save config: {e}")
-            # Clean up temp file if it exists
-            try:
-                if temp_path.exists():
-                    temp_path.unlink()
-            except Exception:
-                pass
+            # Clean up temp file if it exists - best effort, can't do anything if cleanup fails
+            if temp_path is not None:
+                try:
+                    if temp_path.exists():
+                        temp_path.unlink()
+                except Exception:
+                    pass  # Ignore cleanup failures during error handling
 
     def _on_closing(self) -> None:
         """Handle window close event"""
@@ -1038,7 +1041,7 @@ https://github.com/trumank/repak
                         if process.poll() is None:
                             process.terminate()
                     except Exception:
-                        pass
+                        pass  # Best effort process cleanup on cancellation
 
         thread = threading.Thread(target=_run, daemon=True)
         self.operation_thread = thread
@@ -1047,30 +1050,52 @@ https://github.com/trumank/repak
     def _is_operation_running(self) -> bool:
         """Check if an operation is currently running"""
         with self._lock:
-            return self.current_process is not None or (
+            return self._operation_in_progress or self.current_process is not None or (
                 self.operation_thread is not None and self.operation_thread.is_alive()
             )
 
+    def _try_start_operation(self) -> bool:
+        """
+        Atomically check if an operation can be started and mark it as started.
+        Returns True if operation can proceed, False if another operation is running.
+        This prevents race conditions between checking and starting operations.
+        """
+        with self._lock:
+            if self._operation_in_progress or self.current_process is not None or (
+                self.operation_thread is not None and self.operation_thread.is_alive()
+            ):
+                return False
+            self._operation_in_progress = True
+            return True
+
+    def _end_operation(self) -> None:
+        """Mark the current operation as completed"""
+        with self._lock:
+            self._operation_in_progress = False
+
     def do_unpack(self) -> None:
-        # Check if an operation is already running
-        if self._is_operation_running():
+        # Atomically check and start operation to prevent race conditions
+        if not self._try_start_operation():
             messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
             return
 
         pak_file = self.unpack_pak_var.get().strip()
 
         if not pak_file:
+            self._end_operation()
             messagebox.showwarning("Warning", "Please select a pak file to unpack.")
             return
 
         # Validate path
         validated_path = self._validate_path(pak_file, must_exist=True)
         if not validated_path:
+            self._end_operation()
             messagebox.showerror("Error", f"Invalid or non-existent pak file:\n{pak_file}")
             return
 
         # Ensure it's a .pak file
         if validated_path.suffix.lower() != '.pak':
+            self._end_operation()
             messagebox.showwarning("Warning", "Selected file is not a .pak file.")
             return
 
@@ -1082,6 +1107,7 @@ https://github.com/trumank/repak
         output_dir = self.unpack_dir / pak_name
 
         def on_complete(success: bool) -> None:
+            self._end_operation()  # Mark operation as finished
             if success:
                 messagebox.showinfo(
                     "Unpack Complete",
@@ -1100,8 +1126,8 @@ https://github.com/trumank/repak
         self.run_repak(args, callback=on_complete)
 
     def do_pack(self):
-        # Check if an operation is already running
-        if self._is_operation_running():
+        # Atomically check and start operation to prevent race conditions
+        if not self._try_start_operation():
             messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
             return
 
@@ -1109,16 +1135,19 @@ https://github.com/trumank/repak
         pak_name = self.pack_name_var.get().strip()
 
         if not source_dir:
+            self._end_operation()
             messagebox.showwarning("Warning", "Please select a source directory to pack.")
             return
 
         # Validate source directory
         validated_dir = self._validate_path(source_dir, must_exist=True)
         if not validated_dir or not validated_dir.is_dir():
+            self._end_operation()
             messagebox.showerror("Error", f"Invalid or non-existent source directory:\n{source_dir}")
             return
 
         if not pak_name:
+            self._end_operation()
             messagebox.showwarning("Warning", "Please specify a pak file name.")
             return
 
@@ -1132,6 +1161,7 @@ https://github.com/trumank/repak
         output_pak = self.pack_dir / pak_name
 
         def on_complete(success):
+            self._end_operation()  # Mark operation as finished
             if success:
                 messagebox.showinfo(
                     "Pack Complete",
@@ -1148,46 +1178,56 @@ https://github.com/trumank/repak
         self.run_repak(args, callback=on_complete)
 
     def do_info(self):
-        # Check if an operation is already running
-        if self._is_operation_running():
+        # Atomically check and start operation to prevent race conditions
+        if not self._try_start_operation():
             messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
             return
 
         pak_file = self.info_pak_var.get().strip()
 
         if not pak_file:
+            self._end_operation()
             messagebox.showwarning("Warning", "Please select a pak file.")
             return
 
         # Validate path
         validated_path = self._validate_path(pak_file, must_exist=True)
         if not validated_path:
+            self._end_operation()
             messagebox.showerror("Error", f"Invalid or non-existent pak file:\n{pak_file}")
             return
+
+        def on_complete(success):
+            self._end_operation()  # Mark operation as finished
 
         self.show_progress("Getting info...")
-        self.run_repak(["info", str(validated_path)])
+        self.run_repak(["info", str(validated_path)], callback=on_complete)
 
     def do_list(self):
-        # Check if an operation is already running
-        if self._is_operation_running():
+        # Atomically check and start operation to prevent race conditions
+        if not self._try_start_operation():
             messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
             return
 
         pak_file = self.info_pak_var.get().strip()
 
         if not pak_file:
+            self._end_operation()
             messagebox.showwarning("Warning", "Please select a pak file.")
             return
 
         # Validate path
         validated_path = self._validate_path(pak_file, must_exist=True)
         if not validated_path:
+            self._end_operation()
             messagebox.showerror("Error", f"Invalid or non-existent pak file:\n{pak_file}")
             return
 
+        def on_complete(success):
+            self._end_operation()  # Mark operation as finished
+
         self.show_progress("Listing contents...")
-        self.run_repak(["list", str(validated_path)])
+        self.run_repak(["list", str(validated_path)], callback=on_complete)
 
     def do_batch_unpack(self):
         """Unpack all files in the batch list sequentially with cancellation support"""
@@ -1320,7 +1360,7 @@ https://github.com/trumank/repak
                             if process.poll() is None:
                                 process.terminate()
                         except Exception:
-                            pass
+                            pass  # Best effort process cleanup on cancellation
 
             # Summary
             self.root.after(0, self.log, "\n" + "=" * 50)
@@ -1498,19 +1538,26 @@ https://github.com/trumank/repak
                 with urllib.request.urlopen(request, timeout=60) as response:
                     content = response.read()
                     tmp_file.write(content)
+                    tmp_file.flush()
+                    os.fsync(tmp_file.fileno())  # Ensure data is written to disk
                 tmp_path = tmp_file.name
 
-            # Calculate SHA256 checksum of downloaded file
-            sha256_hash = hashlib.sha256(content).hexdigest().lower()
+            # Calculate SHA256 checksum by reading back from disk (not in-memory content)
+            # This ensures we verify what was actually written to disk
+            hash_sha256 = hashlib.sha256()
+            with open(tmp_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    hash_sha256.update(chunk)
+            sha256_hash = hash_sha256.hexdigest().lower()
             logging.info(f"Downloaded file checksum: {sha256_hash[:16]}...")
 
             # Verify checksum
             if sha256_hash != expected_checksum:
-                # Delete the potentially compromised file
+                # Delete the potentially compromised file - best effort, log the mismatch regardless
                 try:
                     Path(tmp_path).unlink()
                 except Exception:
-                    pass
+                    pass  # Can't do anything if delete fails, continue to show error
 
                 logging.error(f"Checksum mismatch! Expected: {expected_checksum}, Got: {sha256_hash}")
                 self.root.after(0, lambda: messagebox.showerror(

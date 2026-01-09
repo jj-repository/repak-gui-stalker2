@@ -113,6 +113,11 @@ def _validate_path(path_str: str) -> Optional[Path]:
 - Cancelable operations
 - Proper process cleanup on exit
 
+### Thread Safety
+- Atomic operation start pattern with `_try_start_operation()` / `_end_operation()`
+- Lock-protected config saves
+- Update file verification hashes from disk (not memory)
+
 ## UI Constants
 
 ```python
