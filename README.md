@@ -35,6 +35,14 @@
 - ✅ Binary integrity validation
 - ✅ SHA-256 file hashing (in conflict detection)
 - ✅ Input validation and sanitization
+- ✅ SHA-256 verified updates
+
+### Auto-Updates
+- **Automatic update checking** on startup (configurable via Help menu)
+- **One-click updates** with SHA256 checksum verification
+- **Backup creation** before applying updates
+- **Manual update check** via Help menu
+- **GitHub Releases integration** - direct link to releases page
 
 ## 📋 Requirements
 
@@ -194,6 +202,12 @@ Copy `oo2core_9_win64.dll` from your STALKER 2 installation (`Stalker2/Content/P
 2. View detailed logs in `repak_gui.log`
 3. Export logs with **Ctrl+E** for sharing
 
+### Update Issues
+- **"Checksum verification failed"**: Downloaded file corrupted, try again
+- **"Could not find checksum file"**: Checksum not yet published for this release
+- **Cannot check for updates**: Check your internet connection
+- **Restore from backup**: If update fails, restore from `.py.backup` file
+
 ## 🎮 STALKER 2 Modding Tips
 
 ### Pak Naming Convention
@@ -243,25 +257,27 @@ pytest test_repak_gui.py -v
 
 ## 🌟 Features Comparison
 
-| Feature | v1.0.0 | v1.1.0 | v1.2.0 | v1.3.0 |
-|---------|---------|---------|---------|---------|
-| Basic unpack/pack | ✅ | ✅ | ✅ | ✅ |
-| Batch operations | ✅ | ✅ | ✅ | ✅ |
-| AES encryption | ✅ | ✅ | ✅ | ✅ |
-| Recent files | ❌ | ✅ | ✅ | ✅ |
-| Keyboard shortcuts | ❌ | ✅ | ✅ | ✅ |
-| Operation cancellation | ❌ | ✅ | ✅ | ✅ |
-| File-based logging | ❌ | ✅ | ✅ | ✅ |
-| Export logs | ❌ | ✅ | ✅ | ✅ |
-| Context menus | ❌ | ✅ | ✅ | ✅ |
-| Configuration persistence | ❌ | ✅ | ✅ | ✅ |
-| Security hardening | ⚠️ Basic | ✅ Advanced | ✅ Advanced | ✅ Advanced |
-| Type hints | ❌ | ✅ | ✅ | ✅ |
-| Unit tests | ❌ | ✅ | ✅ (31 tests) | ✅ (31 tests) |
-| AES key validation | ❌ | ❌ | ✅ | ✅ |
-| Windows full compatibility | ⚠️ Partial | ⚠️ Partial | ✅ Full | ✅ Full |
-| Thread safety locks | ❌ | ❌ | ✅ | ✅ |
-| Subprocess timeout protection | ❌ | ❌ | ✅ | ✅ |
+| Feature | v1.0.0 | v1.1.0 | v1.2.0 | v1.3.0 | v1.4.0 |
+|---------|---------|---------|---------|---------|---------|
+| Basic unpack/pack | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Batch operations | ✅ | ✅ | ✅ | ✅ | ✅ |
+| AES encryption | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Recent files | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Keyboard shortcuts | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Operation cancellation | ❌ | ✅ | ✅ | ✅ | ✅ |
+| File-based logging | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Export logs | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Context menus | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Configuration persistence | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Security hardening | ⚠️ Basic | ✅ Advanced | ✅ Advanced | ✅ Advanced | ✅ Advanced |
+| Type hints | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Unit tests | ❌ | ✅ | ✅ (31 tests) | ✅ (31 tests) | ✅ (31 tests) |
+| AES key validation | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Windows full compatibility | ⚠️ Partial | ⚠️ Partial | ✅ Full | ✅ Full | ✅ Full |
+| Thread safety locks | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Subprocess timeout protection | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Auto-update with SHA256 | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Update toggle setting | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 ## 📞 Support
 
