@@ -484,17 +484,39 @@ https://github.com/trumank/repak
             Path object if valid, None otherwise
         """
         try:
+            # Security: Reject empty paths
+            if not path_str or not path_str.strip():
+                return None
+
+            # Security: Reject paths with null bytes
+            if '\x00' in path_str:
+                logging.warning(f"Rejected path with null byte: {repr(path_str)}")
+                return None
+
+            # Security: Reject paths with suspicious traversal patterns before resolution
+            suspicious_patterns = ['../', '..\\', '/../', '\\..\\']
+            path_lower = path_str.lower()
+            for pattern in suspicious_patterns:
+                if pattern in path_lower:
+                    logging.warning(f"Rejected path with suspicious pattern '{pattern}': {path_str}")
+                    return None
+
             path = Path(path_str).resolve()
 
             # Check if path exists (if required)
             if must_exist and not path.exists():
                 return None
 
-            # Ensure path is not attempting traversal outside allowed directories
-            # Allow paths within script_dir or absolute paths that user explicitly selected
+            # Security: Verify the resolved path doesn't contain traversal sequences
+            resolved_str = str(path)
+            if '..' in resolved_str:
+                logging.warning(f"Rejected resolved path containing '..': {resolved_str}")
+                return None
+
             return path
 
-        except Exception:
+        except Exception as e:
+            logging.warning(f"Path validation failed for '{path_str}': {e}")
             return None
 
     def _redact_aes_key(self, cmd_list: List[str]) -> str:
@@ -547,6 +569,14 @@ https://github.com/trumank/repak
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Check for Updates", command=self._check_for_updates_clicked)
+
+        # Auto-check updates toggle
+        self.auto_check_var = tk.BooleanVar(value=self.config.get('auto_check_updates', True))
+        help_menu.add_checkbutton(
+            label="Check for Updates on Startup",
+            variable=self.auto_check_var,
+            command=self._toggle_auto_check_updates
+        )
         help_menu.add_separator()
         help_menu.add_command(label="Keyboard Shortcuts", command=self._show_shortcuts)
         help_menu.add_separator()
@@ -1333,6 +1363,11 @@ https://github.com/trumank/repak
         """Handle Check for Updates menu click."""
         threading.Thread(target=self._check_for_updates, args=(False,), daemon=True).start()
 
+    def _toggle_auto_check_updates(self) -> None:
+        """Toggle automatic update checking on startup."""
+        self.config['auto_check_updates'] = self.auto_check_var.get()
+        self._save_config()
+
     def _check_for_updates(self, silent: bool = True) -> None:
         """Check GitHub for new version.
 
@@ -1416,27 +1451,80 @@ https://github.com/trumank/repak
         dialog.geometry(f"+{x}+{y}")
 
     def _apply_update(self, release_data: dict) -> None:
-        """Download and apply update."""
+        """Download and apply update with SHA256 checksum verification."""
         import urllib.request
         import urllib.error
         import shutil
         import tempfile
+        import hashlib
 
         try:
             tag_name = release_data.get('tag_name', 'main')
             download_url = f"{GITHUB_RAW_URL}/{tag_name}/repak_gui.py"
+            checksum_url = f"{GITHUB_RAW_URL}/{tag_name}/repak_gui.py.sha256"
+
+            headers = {'User-Agent': f'RepakGUI/{__version__}'}
+
+            # First, try to download the checksum file
+            expected_checksum = None
+            try:
+                checksum_request = urllib.request.Request(checksum_url, headers=headers)
+                with urllib.request.urlopen(checksum_request, timeout=30) as response:
+                    checksum_content = response.read().decode().strip()
+                    # Format: "sha256hash  filename" or just "sha256hash"
+                    expected_checksum = checksum_content.split()[0].lower()
+                    if len(expected_checksum) != 64:
+                        raise ValueError("Invalid checksum format")
+                logging.info(f"Expected checksum: {expected_checksum[:16]}...")
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    # Checksum file doesn't exist - abort for security
+                    logging.warning("No checksum file found for this release")
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        "Update Aborted",
+                        "No checksum file found for this release.\n\n"
+                        "The update cannot be verified for integrity.\n\n"
+                        "Please download the update manually from:\n"
+                        f"{GITHUB_RELEASES_URL}"
+                    ))
+                    return
+                raise
+
             logging.info(f"Downloading update from: {download_url}")
 
-            request = urllib.request.Request(
-                download_url,
-                headers={'User-Agent': f'RepakGUI/{__version__}'}
-            )
+            request = urllib.request.Request(download_url, headers=headers)
 
             with tempfile.NamedTemporaryFile(mode='wb', suffix='.py', delete=False) as tmp_file:
                 with urllib.request.urlopen(request, timeout=60) as response:
-                    tmp_file.write(response.read())
+                    content = response.read()
+                    tmp_file.write(content)
                 tmp_path = tmp_file.name
 
+            # Calculate SHA256 checksum of downloaded file
+            sha256_hash = hashlib.sha256(content).hexdigest().lower()
+            logging.info(f"Downloaded file checksum: {sha256_hash[:16]}...")
+
+            # Verify checksum
+            if sha256_hash != expected_checksum:
+                # Delete the potentially compromised file
+                try:
+                    Path(tmp_path).unlink()
+                except Exception:
+                    pass
+
+                logging.error(f"Checksum mismatch! Expected: {expected_checksum}, Got: {sha256_hash}")
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Security Error",
+                    "CHECKSUM VERIFICATION FAILED!\n\n"
+                    f"Expected: {expected_checksum[:32]}...\n"
+                    f"Got: {sha256_hash[:32]}...\n\n"
+                    "The downloaded file may have been tampered with.\n"
+                    "Update has been aborted for your safety.\n\n"
+                    "Please report this issue on GitHub."
+                ))
+                return
+
+            # Checksum verified - apply update
             current_script = Path(__file__).resolve()
             backup_path = current_script.with_suffix('.py.backup')
             shutil.copy2(current_script, backup_path)
@@ -1447,7 +1535,9 @@ https://github.com/trumank/repak
 
             self.root.after(0, lambda: messagebox.showinfo(
                 "Update Complete",
-                "Update downloaded successfully!\n\nPlease restart the application to apply the update."
+                f"Update downloaded and verified successfully!\n\n"
+                f"Checksum: {sha256_hash[:16]}...\n\n"
+                "Please restart the application to apply the update."
             ))
 
         except Exception as e:
