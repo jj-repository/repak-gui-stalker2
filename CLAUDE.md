@@ -69,22 +69,24 @@ The entire application is contained in `repak_gui.py` for easy distribution alon
 
 ## Update System
 
-**Status:** Partial implementation (check + download, NO SHA256 verification)
+**Status:** Fully implemented with SHA256 verification
 
 **Components:**
 - `_check_for_updates()`: Fetches latest release from GitHub API
 - `_version_newer()`: Simple tuple-based version comparison
 - `_show_update_dialog()`: Modal with Update Now / Open Releases / Later
-- `_apply_update()`: Downloads and replaces script file
+- `_apply_update()`: Downloads, verifies SHA256 checksum, creates backup, applies update
 
 **GitHub Integration:**
 - Repository: `jj-repository/repak-gui-stalker2`
 - API: `https://api.github.com/repos/jj-repository/repak-gui-stalker2/releases/latest`
+- Checksum file: `repak_gui.py.sha256`
 
-**Security Issues (TO FIX):**
-- NO SHA256 checksum verification
-- No UI toggle for auto_check_updates setting
-- Downloads directly without verification
+**Security Features:**
+- SHA256 checksum verification required
+- Creates `.py.backup` before replacing
+- Aborts if checksum file missing (404)
+- Deletes downloaded file if verification fails
 
 ## Dependencies
 
@@ -121,6 +123,26 @@ MIN_WINDOW_HEIGHT = 400
 LOG_FONT_SIZE = 9
 ```
 
+## Testing
+
+**Test File:** `test_repak_gui.py`
+
+**Test Categories (31 tests):**
+- `TestAESKeyValidation`: AES key format validation
+- `TestRedactAESKey`: Key redaction in logs
+- `TestPathValidation`: Path validation security
+- `TestConfigPersistence`: Config save/load
+- `TestRecentFilesLimit`: Recent files management
+- `TestFindConflicts`: Conflict detection functionality
+- `TestVersionDefined`: Version string validation
+- `TestConstants`: Application constants
+- `TestCopyConflictsToFolders`: Conflict resolution
+
+**Running Tests:**
+```bash
+python -m pytest test_repak_gui.py -v
+```
+
 ## Logging
 
 **Log File:** `./repak_gui.log`
@@ -133,20 +155,10 @@ LOG_FONT_SIZE = 9
 
 ## Known Issues / Technical Debt
 
-1. **No SHA256 verification**: Update downloads are not verified - SECURITY RISK
-2. **No UI for auto_check_updates**: Setting exists in config but no checkbox
-3. **Config in script directory**: Should use `~/.config/repak-gui/`
-4. **No unit tests**: Application lacks test coverage
+1. **No UI for auto_check_updates**: Setting exists in config but no checkbox
+2. **Config in script directory**: Should use `~/.config/repak-gui/`
 
 ## Common Development Tasks
-
-### Adding SHA256 verification
-Reference autoclicker.py implementation:
-1. Download `.sha256` file from GitHub raw URL
-2. Parse checksum (format: "hash  filename" or just "hash")
-3. Calculate SHA256 of downloaded content
-4. Compare and abort if mismatch
-5. Delete temp file on verification failure
 
 ### Adding auto_check_updates UI toggle
 1. Add checkbox to settings area
