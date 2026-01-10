@@ -1047,6 +1047,11 @@ https://github.com/trumank/repak
                             process.stdout.close()
                         if process.poll() is None:
                             process.terminate()
+                            try:
+                                process.wait(timeout=5)  # Wait for process to exit, prevent zombie
+                            except subprocess.TimeoutExpired:
+                                process.kill()  # Force kill if terminate didn't work
+                                process.wait()
                     except Exception:
                         pass  # Best effort process cleanup on cancellation
 
