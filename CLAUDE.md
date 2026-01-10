@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Repak GUI** is a Python desktop application providing a graphical interface for the `repak` command-line tool (Unreal Engine .pak file utility). Designed specifically for STALKER 2 modding, it supports packing and unpacking .pak files with optional AES encryption.
 
-**Version:** 1.4.1
+**Version:** 1.4.2
 
 ## Files Structure
 
