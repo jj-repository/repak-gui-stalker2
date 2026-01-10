@@ -169,6 +169,7 @@ python -m pytest test_repak_gui.py -v
 - Fixed root.after() call that was passing dict as argument (progress label now updates correctly during batch operations)
 - Added lock protection around self.current_process assignments to prevent race conditions during cancellation
 - Added validation for empty pak name after sanitization to prevent creating invalid `.pak` files
+- Fixed zombie process leak on Unix (added wait() after terminate() with kill() fallback)
 
 ## Common Development Tasks
 
