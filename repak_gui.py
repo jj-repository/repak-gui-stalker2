@@ -895,8 +895,13 @@ https://github.com/trumank/repak
                 self.batch_listbox.selection_set(index+1)
 
     def log(self, message: str) -> None:
+        MAX_LOG_LINES = 5000
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, message + "\n")
+        # Limit log to MAX_LOG_LINES to prevent unbounded memory growth
+        line_count = int(self.log_text.index('end-1c').split('.')[0])
+        if line_count > MAX_LOG_LINES:
+            self.log_text.delete('1.0', f'{line_count - MAX_LOG_LINES}.0')
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
 
@@ -958,8 +963,9 @@ https://github.com/trumank/repak
                     creationflags=creationflags
                 )
 
-                # Track the current process for cancellation
-                self.current_process = process
+                # Track the current process for cancellation (thread-safe)
+                with self._lock:
+                    self.current_process = process
 
                 # Read output if stdout is available
                 if process.stdout:
@@ -1032,7 +1038,8 @@ https://github.com/trumank/repak
                 if callback:
                     self.root.after(0, callback, False)
             finally:
-                self.current_process = None
+                with self._lock:
+                    self.current_process = None
                 # Ensure process is cleaned up
                 if process is not None:
                     try:
@@ -1153,6 +1160,12 @@ https://github.com/trumank/repak
 
         # Sanitize pak name to prevent path traversal
         pak_name = Path(pak_name).name  # Extract just the filename, removing any path components
+
+        # Validate pak name is not empty after sanitization
+        if not pak_name or pak_name == ".pak":
+            self._end_operation()
+            messagebox.showwarning("Warning", "Invalid pak file name. Please enter a valid name.")
+            return
 
         # Ensure .pak extension
         if not pak_name.endswith(".pak"):
@@ -1291,7 +1304,7 @@ https://github.com/trumank/repak
                 output_dir = self.unpack_dir / pak_name
 
                 self.root.after(0, self.log, f"\n[{i}/{total}] Unpacking: {pak_name}")
-                self.root.after(0, self.progress_label.config, {"text": f"Unpacking {i}/{total}: {pak_name}"})
+                self.root.after(0, lambda pn=pak_name, idx=i, tot=total: self.progress_label.config(text=f"Unpacking {idx}/{tot}: {pn}"))
 
                 cmd = [str(self.repak_path), "unpack", str(pak_file), "--output", str(output_dir)]
 
@@ -1309,7 +1322,8 @@ https://github.com/trumank/repak
                         creationflags=creationflags
                     )
 
-                    self.current_process = process
+                    with self._lock:
+                        self.current_process = process
 
                     if process.stdout:
                         for line in iter(process.stdout.readline, ''):
@@ -1352,7 +1366,8 @@ https://github.com/trumank/repak
                     self.root.after(0, self.log, f"  -> Error: {str(e)}")
                     fail_count += 1
                 finally:
-                    self.current_process = None
+                    with self._lock:
+                        self.current_process = None
                     if process is not None:
                         try:
                             if process.stdout and not process.stdout.closed:

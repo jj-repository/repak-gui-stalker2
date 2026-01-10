@@ -116,6 +116,7 @@ def _validate_path(path_str: str) -> Optional[Path]:
 ### Thread Safety
 - Atomic operation start pattern with `_try_start_operation()` / `_end_operation()`
 - Lock-protected config saves
+- Lock-protected current_process assignments for safe cancellation
 - Update file verification hashes from disk (not memory)
 
 ## UI Constants
@@ -132,7 +133,7 @@ LOG_FONT_SIZE = 9
 
 **Test File:** `test_repak_gui.py`
 
-**Test Categories (31 tests):**
+**Test Categories (85 tests):**
 - `TestAESKeyValidation`: AES key format validation
 - `TestRedactAESKey`: Key redaction in logs
 - `TestPathValidation`: Path validation security
@@ -160,8 +161,14 @@ python -m pytest test_repak_gui.py -v
 
 ## Known Issues / Technical Debt
 
-1. **No UI for auto_check_updates**: Setting exists in config but no checkbox
-2. **Config in script directory**: Should use `~/.config/repak-gui/`
+1. **Config in script directory**: Should use `~/.config/repak-gui/`
+2. **Drag-and-drop not implemented**: tkinterdnd2 is imported but feature not wired up
+
+## Recent Fixes (January 2026)
+
+- Fixed root.after() call that was passing dict as argument (progress label now updates correctly during batch operations)
+- Added lock protection around self.current_process assignments to prevent race conditions during cancellation
+- Added validation for empty pak name after sanitization to prevent creating invalid `.pak` files
 
 ## Common Development Tasks
 
