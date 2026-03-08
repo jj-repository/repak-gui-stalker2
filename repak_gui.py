@@ -4,7 +4,7 @@ Repak GUI - A simple GUI wrapper for repak (Unreal Engine .pak tool)
 Designed for STALKER 2 modding
 """
 
-__version__ = "1.4.1"
+__version__ = "1.4.2"
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -377,7 +377,11 @@ class RepakGUI:
         else:
             messagebox.showwarning("File Not Found",
                 f"The file no longer exists:\n{filepath}")
-            self.recent_files.remove(filepath)
+            with self._lock:
+                try:
+                    self.recent_files.remove(filepath)
+                except ValueError:
+                    pass  # Already removed by another call
             self._update_recent_files_menu()
 
     def cancel_operation(self) -> None:
@@ -921,8 +925,6 @@ https://github.com/trumank/repak
         """Hide the progress bar"""
         self.progress_bar.stop()
         self.progress_frame.pack_forget()
-        self.current_process = None
-        self.cancel_requested = False
 
     def run_repak(self, args: List[str], callback: Optional[Callable[[bool], None]] = None) -> None:
         """Run repak command in a separate thread with cancellation support"""
@@ -958,7 +960,8 @@ https://github.com/trumank/repak
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     cwd=self.script_dir,
                     creationflags=creationflags
                 )
@@ -1249,7 +1252,12 @@ https://github.com/trumank/repak
 
     def do_batch_unpack(self):
         """Unpack all files in the batch list sequentially with cancellation support"""
+        if not self._try_start_operation():
+            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            return
+
         if not self.batch_pak_files:
+            self._end_operation()
             messagebox.showwarning("Warning", "Please add pak files to unpack.")
             return
 
@@ -1265,12 +1273,14 @@ https://github.com/trumank/repak
                 invalid.append(pak_file)
 
         if invalid:
+            self._end_operation()
             messagebox.showerror("Error",
                 f"Some files are invalid or not found:\n{chr(10).join(invalid[:5])}"
                 + (f"\n... and {len(invalid)-5} more" if len(invalid) > 5 else ""))
             return
 
         if not validated_files:
+            self._end_operation()
             messagebox.showwarning("Warning", "No valid pak files to unpack.")
             return
 
@@ -1288,122 +1298,126 @@ https://github.com/trumank/repak
 
         # Run batch unpack in a thread
         def _batch_run():
-            total = len(validated_files)
-            success_count = 0
-            fail_count = 0
-            skipped_count = 0
+            try:
+                total = len(validated_files)
+                success_count = 0
+                fail_count = 0
+                skipped_count = 0
 
-            # Use CREATE_NO_WINDOW on Windows
-            creationflags = 0
-            if IS_WINDOWS:
-                creationflags = subprocess.CREATE_NO_WINDOW
+                # Use CREATE_NO_WINDOW on Windows
+                creationflags = 0
+                if IS_WINDOWS:
+                    creationflags = subprocess.CREATE_NO_WINDOW
 
-            for i, pak_file in enumerate(validated_files, 1):
-                # Check for cancellation before starting each file
-                if self.cancel_requested:
-                    skipped_count = total - i + 1
-                    self.root.after(0, self.log, f"\n⚠️ Batch cancelled. Skipped {skipped_count} file(s).")
-                    break
-
-                pak_name = pak_file.stem
-                output_dir = self.unpack_dir / pak_name
-
-                self.root.after(0, self.log, f"\n[{i}/{total}] Unpacking: {pak_name}")
-                self.root.after(0, lambda pn=pak_name, idx=i, tot=total: self.progress_label.config(text=f"Unpacking {idx}/{tot}: {pn}"))
-
-                cmd = [str(self.repak_path), "unpack", str(pak_file), "--output", str(output_dir)]
-
-                if aes_key:
-                    cmd.extend(["--aes-key", aes_key])
-
-                process = None
-                try:
-                    process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        cwd=self.script_dir,
-                        creationflags=creationflags
-                    )
-
-                    with self._lock:
-                        self.current_process = process
-
-                    if process.stdout:
-                        for line in iter(process.stdout.readline, ''):
-                            # Check for cancellation during output reading
-                            if self.cancel_requested:
-                                process.terminate()
-                                try:
-                                    process.wait(timeout=5)
-                                except subprocess.TimeoutExpired:
-                                    process.kill()
-                                skipped_count = total - i
-                                self.root.after(0, self.log, f"\n⚠️ Cancelled during {pak_name}. Skipped {skipped_count} remaining file(s).")
-                                break
-                            self.root.after(0, self.log, line.rstrip())
-
-                        process.stdout.close()
-
-                    # Break out of main loop if cancelled
+                for i, pak_file in enumerate(validated_files, 1):
+                    # Check for cancellation before starting each file
                     if self.cancel_requested:
+                        skipped_count = total - i + 1
+                        self.root.after(0, self.log, f"\n⚠️ Batch cancelled. Skipped {skipped_count} file(s).")
                         break
 
-                    process.wait(timeout=SUBPROCESS_TIMEOUT)
+                    pak_name = pak_file.stem
+                    output_dir = self.unpack_dir / pak_name
 
-                    if process.returncode == 0:
-                        self.root.after(0, self.log, f"  -> Success: {output_dir}")
-                        success_count += 1
-                    else:
-                        self.root.after(0, self.log, f"  -> Failed with exit code {process.returncode}")
+                    self.root.after(0, self.log, f"\n[{i}/{total}] Unpacking: {pak_name}")
+                    self.root.after(0, lambda pn=pak_name, idx=i, tot=total: self.progress_label.config(text=f"Unpacking {idx}/{tot}: {pn}"))
+
+                    cmd = [str(self.repak_path), "unpack", str(pak_file), "--output", str(output_dir)]
+
+                    if aes_key:
+                        cmd.extend(["--aes-key", aes_key])
+
+                    process = None
+                    try:
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            encoding='utf-8',
+                            errors='replace',
+                            cwd=self.script_dir,
+                            creationflags=creationflags
+                        )
+
+                        with self._lock:
+                            self.current_process = process
+
+                        if process.stdout:
+                            for line in iter(process.stdout.readline, ''):
+                                # Check for cancellation during output reading
+                                if self.cancel_requested:
+                                    process.terminate()
+                                    try:
+                                        process.wait(timeout=5)
+                                    except subprocess.TimeoutExpired:
+                                        process.kill()
+                                    skipped_count = total - i
+                                    self.root.after(0, self.log, f"\n⚠️ Cancelled during {pak_name}. Skipped {skipped_count} remaining file(s).")
+                                    break
+                                self.root.after(0, self.log, line.rstrip())
+
+                            process.stdout.close()
+
+                        # Break out of main loop if cancelled
+                        if self.cancel_requested:
+                            break
+
+                        process.wait(timeout=SUBPROCESS_TIMEOUT)
+
+                        if process.returncode == 0:
+                            self.root.after(0, self.log, f"  -> Success: {output_dir}")
+                            success_count += 1
+                        else:
+                            self.root.after(0, self.log, f"  -> Failed with exit code {process.returncode}")
+                            fail_count += 1
+
+                    except subprocess.TimeoutExpired:
+                        if process:
+                            process.kill()
+                        self.root.after(0, self.log, f"  -> Timeout: process killed")
                         fail_count += 1
+                    except FileNotFoundError:
+                        self.root.after(0, self.log, f"  -> Error: repak binary not found")
+                        fail_count += 1
+                    except Exception as e:
+                        self.root.after(0, self.log, f"  -> Error: {str(e)}")
+                        fail_count += 1
+                    finally:
+                        with self._lock:
+                            self.current_process = None
+                        if process is not None:
+                            try:
+                                if process.stdout and not process.stdout.closed:
+                                    process.stdout.close()
+                                if process.poll() is None:
+                                    process.terminate()
+                            except Exception:
+                                pass  # Best effort process cleanup on cancellation
 
-                except subprocess.TimeoutExpired:
-                    if process:
-                        process.kill()
-                    self.root.after(0, self.log, f"  -> Timeout: process killed")
-                    fail_count += 1
-                except FileNotFoundError:
-                    self.root.after(0, self.log, f"  -> Error: repak binary not found")
-                    fail_count += 1
-                except Exception as e:
-                    self.root.after(0, self.log, f"  -> Error: {str(e)}")
-                    fail_count += 1
-                finally:
-                    with self._lock:
-                        self.current_process = None
-                    if process is not None:
-                        try:
-                            if process.stdout and not process.stdout.closed:
-                                process.stdout.close()
-                            if process.poll() is None:
-                                process.terminate()
-                        except Exception:
-                            pass  # Best effort process cleanup on cancellation
+                # Summary
+                self.root.after(0, self.log, "\n" + "=" * 50)
+                summary = f"Batch unpack complete: {success_count} succeeded, {fail_count} failed"
+                if skipped_count > 0:
+                    summary += f", {skipped_count} skipped"
+                self.root.after(0, self.log, summary)
+                self.root.after(0, self.hide_progress)
+                logging.info(summary)
 
-            # Summary
-            self.root.after(0, self.log, "\n" + "=" * 50)
-            summary = f"Batch unpack complete: {success_count} succeeded, {fail_count} failed"
-            if skipped_count > 0:
-                summary += f", {skipped_count} skipped"
-            self.root.after(0, self.log, summary)
-            self.root.after(0, self.hide_progress)
-            logging.info(summary)
-
-            # Show completion dialog
-            if self.cancel_requested:
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "Batch Unpack Cancelled",
-                    f"Operation cancelled by user.\n\n{success_count} succeeded, {fail_count} failed, {skipped_count} skipped."))
-            elif fail_count == 0:
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "Batch Unpack Complete",
-                    f"Successfully unpacked {success_count} file(s).\n\nOutput: {self.unpack_dir}"))
-            else:
-                self.root.after(0, lambda: messagebox.showwarning(
-                    "Batch Unpack Complete",
-                    f"Completed with errors.\n\n{success_count} succeeded, {fail_count} failed.\n\nCheck the log for details."))
+                # Show completion dialog
+                if self.cancel_requested:
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Batch Unpack Cancelled",
+                        f"Operation cancelled by user.\n\n{success_count} succeeded, {fail_count} failed, {skipped_count} skipped."))
+                elif fail_count == 0:
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Batch Unpack Complete",
+                        f"Successfully unpacked {success_count} file(s).\n\nOutput: {self.unpack_dir}"))
+                else:
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        "Batch Unpack Complete",
+                        f"Completed with errors.\n\n{success_count} succeeded, {fail_count} failed.\n\nCheck the log for details."))
+            finally:
+                self._end_operation()
 
         thread = threading.Thread(target=_batch_run, daemon=True)
         self.operation_thread = thread
@@ -1518,6 +1532,7 @@ https://github.com/trumank/repak
         import tempfile
         import hashlib
 
+        tmp_path = None
         try:
             tag_name = release_data.get('tag_name', 'main')
             download_url = f"{GITHUB_RAW_URL}/{tag_name}/repak_gui.py"
@@ -1554,7 +1569,9 @@ https://github.com/trumank/repak
 
             request = urllib.request.Request(download_url, headers=headers)
 
-            with tempfile.NamedTemporaryFile(mode='wb', suffix='.py', delete=False) as tmp_file:
+            # Create temp file in same directory as script to ensure same-filesystem move
+            with tempfile.NamedTemporaryFile(mode='wb', suffix='.py', delete=False,
+                                             dir=str(self.script_dir)) as tmp_file:
                 with urllib.request.urlopen(request, timeout=60) as response:
                     content = response.read()
                     tmp_file.write(content)
@@ -1573,12 +1590,6 @@ https://github.com/trumank/repak
 
             # Verify checksum
             if sha256_hash != expected_checksum:
-                # Delete the potentially compromised file - best effort, log the mismatch regardless
-                try:
-                    Path(tmp_path).unlink()
-                except Exception:
-                    pass  # Can't do anything if delete fails, continue to show error
-
                 logging.error(f"Checksum mismatch! Expected: {expected_checksum}, Got: {sha256_hash}")
                 self.root.after(0, lambda: messagebox.showerror(
                     "Security Error",
@@ -1598,6 +1609,7 @@ https://github.com/trumank/repak
             logging.info(f"Created backup at: {backup_path}")
 
             shutil.move(tmp_path, current_script)
+            tmp_path = None  # Move succeeded, no cleanup needed
             logging.info(f"Updated script at: {current_script}")
 
             self.root.after(0, lambda: messagebox.showinfo(
@@ -1609,10 +1621,26 @@ https://github.com/trumank/repak
 
         except Exception as e:
             logging.error(f"Error applying update: {e}")
+            # Attempt to restore from backup if the original script was removed
+            try:
+                current_script = Path(__file__).resolve()
+                backup_path = current_script.with_suffix('.py.backup')
+                if not current_script.exists() and backup_path.exists():
+                    shutil.copy2(backup_path, current_script)
+                    logging.info(f"Restored script from backup: {backup_path}")
+            except Exception as restore_err:
+                logging.error(f"Failed to restore from backup: {restore_err}")
             self.root.after(0, lambda: messagebox.showerror(
                 "Update Failed",
                 f"Failed to download update:\n{e}"
             ))
+        finally:
+            # Clean up temp file if it still exists
+            if tmp_path is not None:
+                try:
+                    Path(tmp_path).unlink()
+                except Exception:
+                    pass  # Best effort cleanup
 
 
 def main():
