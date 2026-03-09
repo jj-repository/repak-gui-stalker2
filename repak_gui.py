@@ -4,7 +4,7 @@ Repak GUI - A simple GUI wrapper for repak (Unreal Engine .pak tool)
 Designed for STALKER 2 modding
 """
 
-__version__ = "1.4.3"
+__version__ = "1.4.4"
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -656,8 +656,11 @@ https://github.com/trumank/repak
                                                    font=("Monospace", LOG_FONT_SIZE))
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
-        # Clear log button
-        ttk.Button(log_frame, text="Clear Log", command=self.clear_log).pack(pady=(5, 0))
+        # Bottom button row
+        btn_row = ttk.Frame(log_frame)
+        btn_row.pack(pady=(5, 0))
+        ttk.Button(btn_row, text="Clear Log", command=self.clear_log).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_row, text="Check for Updates", command=self._check_for_updates_clicked).pack(side=tk.LEFT, padx=5)
 
     def setup_unpack_tab(self, parent):
         # Pak file selection
