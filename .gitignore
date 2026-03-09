@@ -24,6 +24,11 @@ repak_gui.log
 htmlcov/
 .pytest_cache/
 
+# Virtual environment
+venv/
+ENV/
+env/
+
 # Build artifacts
 build/
 dist/
