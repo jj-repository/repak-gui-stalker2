@@ -28,13 +28,13 @@ jobs:
 
     - name: Build Linux executable
       run: |
-        pyinstaller --onefile --name repak-gui repak_gui.py
+        pyinstaller --onefile --name RepakGUI-Linux repak_gui.py
 
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
       with:
         name: linux-executable
-        path: dist/repak-gui
+        path: dist/RepakGUI-Linux
 
   build-windows:
     runs-on: windows-latest
@@ -54,13 +54,13 @@ jobs:
 
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --windowed --name repak-gui repak_gui.py
+        pyinstaller --onefile --windowed --name RepakGUI-Windows repak_gui.py
 
     - name: Upload Windows artifacts
       uses: actions/upload-artifact@v4
       with:
         name: windows-executable
-        path: dist/repak-gui.exe
+        path: dist/RepakGUI-Windows.exe
 
   release:
     needs: [build-linux, build-windows]
@@ -85,77 +85,32 @@ jobs:
         path: dist/windows
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: |
-          dist/linux/repak-gui
-          dist/windows/repak-gui.exe
+          dist/linux/RepakGUI-Linux
+          dist/windows/RepakGUI-Windows.exe
         body: |
-          # Repak GUI ${{ github.ref_name }}
+          ## Downloads
 
-          A professional GUI wrapper for repak, designed for STALKER 2 modding.
+          | File | Platform |
+          |------|----------|
+          | **RepakGUI-Windows.exe** | Windows |
+          | **RepakGUI-Linux** | Linux |
 
-          ## 🆕 What's New
-
-          ### User Experience
-          - ✨ **Keyboard Shortcuts** - Ctrl+O, Ctrl+E, Ctrl+L, Ctrl+Q, Escape
-          - 📋 **Recent Files** - Quick access to your last 10 PAK files
-          - 🛑 **Cancel Operations** - Stop long-running tasks anytime
-          - 🖱️ **Context Menus** - Right-click batch list for options
-          - 💾 **Configuration Persistence** - Window size and preferences saved
-
-          ### Advanced Features
-          - 📝 **File Logging** - All operations logged to `repak_gui.log`
-          - 📤 **Export Logs** - Save logs for troubleshooting
-          - 🔒 **Enhanced Security** - Path validation, AES key redaction
-          - ⚡ **Better Performance** - Optimized file operations
-
-          ### Developer Improvements
-          - 🔍 **Type Hints** - Full type annotations
-          - 🧪 **Unit Tests** - Comprehensive test coverage
-          - 📚 **Documentation** - Professional README and CHANGELOG
-
-          ## 📥 Downloads
+          ## Installation
 
           ### Windows
-          **[repak-gui.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/repak-gui.exe)**
-          - Download and run directly
-          - Includes all dependencies
+          Download `RepakGUI-Windows.exe` and run it. Place `repak.exe` in the same directory.
 
           ### Linux
-          **[repak-gui](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/repak-gui)**
-          - Download, make executable: `chmod +x repak-gui`
-          - Run: `./repak-gui`
+          Download `RepakGUI-Linux`, make executable: `chmod +x RepakGUI-Linux`, run: `./RepakGUI-Linux`. Place `repak` binary in the same directory.
 
-          ## 📖 Quick Start
-
-          1. Download the appropriate version for your OS
-          2. Run the application
-          3. Use the **Unpack** tab to extract PAK files
-          4. Use the **Pack** tab to create your own PAKs
-          5. Use **Batch Unpack** for multiple files
-
-          ## ⌨️ Keyboard Shortcuts
-
-          - `Ctrl+O` - Browse for PAK file
-          - `Ctrl+L` - Clear log
-          - `Ctrl+E` - Export log
-          - `Ctrl+Q` - Quit
-          - `Escape` - Cancel operation
-
-          ## 📝 Full Changelog
-
-          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for complete version history.
-
-          ## 🐛 Issues?
-
-          Report bugs at: https://github.com/${{ github.repository }}/issues
+          ## Keyboard Shortcuts
+          `Ctrl+O` Browse | `Ctrl+L` Clear log | `Ctrl+E` Export log | `Ctrl+Q` Quit | `Escape` Cancel
 
           ---
-
-          🤖 **Built automatically with GitHub Actions**
-
-          **Note**: You also need the `repak` binary in the same directory as this executable.
+          Built automatically with GitHub Actions
         draft: false
         prerelease: false
       env:
