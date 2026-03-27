@@ -1527,46 +1527,41 @@ https://github.com/trumank/repak
         y = (dialog.winfo_screenheight() - dialog.winfo_height()) // 2
         dialog.geometry(f"+{x}+{y}")
 
+    def _compute_git_blob_sha(self, content):
+        """Compute git blob SHA1 (same as git hash-object)."""
+        import hashlib
+        header = f"blob {len(content)}\0".encode()
+        return hashlib.sha1(header + content).hexdigest()
+
+    def _verify_file_against_github(self, tag_name, filename, content, headers):
+        """Verify content matches GitHub's git tree SHA for this release tag."""
+        import urllib.request
+        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}?ref={tag_name}"
+        request = urllib.request.Request(api_url, headers=headers)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            file_info = json.loads(response.read().decode())
+        expected_sha = file_info.get('sha', '')
+        actual_sha = self._compute_git_blob_sha(content)
+        if actual_sha != expected_sha:
+            raise RuntimeError(
+                f"Integrity check failed for {filename}!\n"
+                f"Expected SHA: {expected_sha[:16]}...\n"
+                f"Got SHA: {actual_sha[:16]}..."
+            )
+
     def _apply_update(self, release_data: dict) -> None:
-        """Download and apply update with SHA256 checksum verification."""
+        """Download and apply update with git blob SHA integrity verification."""
         import urllib.request
         import urllib.error
         import shutil
         import tempfile
-        import hashlib
 
         tmp_path = None
         try:
             tag_name = release_data.get('tag_name', 'main')
             download_url = f"{GITHUB_RAW_URL}/{tag_name}/repak_gui.py"
-            checksum_url = f"{GITHUB_RAW_URL}/{tag_name}/repak_gui.py.sha256"
 
             headers = {'User-Agent': f'RepakGUI/{__version__}'}
-
-            # First, try to download the checksum file
-            expected_checksum = None
-            try:
-                checksum_request = urllib.request.Request(checksum_url, headers=headers)
-                with urllib.request.urlopen(checksum_request, timeout=30) as response:
-                    checksum_content = response.read().decode().strip()
-                    # Format: "sha256hash  filename" or just "sha256hash"
-                    expected_checksum = checksum_content.split()[0].lower()
-                    if len(expected_checksum) != 64:
-                        raise ValueError("Invalid checksum format")
-                logging.info(f"Expected checksum: {expected_checksum[:16]}...")
-            except urllib.error.HTTPError as e:
-                if e.code == 404:
-                    # Checksum file doesn't exist - abort for security
-                    logging.warning("No checksum file found for this release")
-                    self.root.after(0, lambda: messagebox.showwarning(
-                        "Update Aborted",
-                        "No checksum file found for this release.\n\n"
-                        "The update cannot be verified for integrity.\n\n"
-                        "Please download the update manually from:\n"
-                        f"{GITHUB_RELEASES_URL}"
-                    ))
-                    return
-                raise
 
             logging.info(f"Downloading update from: {download_url}")
 
@@ -1582,30 +1577,11 @@ https://github.com/trumank/repak
                     os.fsync(tmp_file.fileno())  # Ensure data is written to disk
                 tmp_path = tmp_file.name
 
-            # Calculate SHA256 checksum by reading back from disk (not in-memory content)
-            # This ensures we verify what was actually written to disk
-            hash_sha256 = hashlib.sha256()
-            with open(tmp_path, 'rb') as f:
-                for chunk in iter(lambda: f.read(8192), b""):
-                    hash_sha256.update(chunk)
-            sha256_hash = hash_sha256.hexdigest().lower()
-            logging.info(f"Downloaded file checksum: {sha256_hash[:16]}...")
+            # Verify integrity using git blob SHA against GitHub Contents API
+            self._verify_file_against_github(tag_name, 'repak_gui.py', content, headers)
+            logging.info("Integrity check passed")
 
-            # Verify checksum
-            if sha256_hash != expected_checksum:
-                logging.error(f"Checksum mismatch! Expected: {expected_checksum}, Got: {sha256_hash}")
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Security Error",
-                    "CHECKSUM VERIFICATION FAILED!\n\n"
-                    f"Expected: {expected_checksum[:32]}...\n"
-                    f"Got: {sha256_hash[:32]}...\n\n"
-                    "The downloaded file may have been tampered with.\n"
-                    "Update has been aborted for your safety.\n\n"
-                    "Please report this issue on GitHub."
-                ))
-                return
-
-            # Checksum verified - apply update
+            # Integrity verified - apply update
             current_script = Path(__file__).resolve()
             backup_path = current_script.with_suffix('.py.backup')
             shutil.copy2(current_script, backup_path)
@@ -1617,8 +1593,7 @@ https://github.com/trumank/repak
 
             self.root.after(0, lambda: messagebox.showinfo(
                 "Update Complete",
-                f"Update downloaded and verified successfully!\n\n"
-                f"Checksum: {sha256_hash[:16]}...\n\n"
+                "Update downloaded and verified successfully!\n\n"
                 "Please restart the application to apply the update."
             ))
 
