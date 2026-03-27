@@ -26,6 +26,10 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install pyinstaller
 
+    - name: Verify checksum file is current
+      run: |
+        sha256sum -c repak_gui.py.sha256
+
     - name: Build Linux executable
       run: |
         pyinstaller --onefile --name RepakGUI-Linux repak_gui.py

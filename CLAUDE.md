@@ -8,6 +8,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Version:** 1.4.4
 
+## Versioning
+
+Version bumps default to **+0.0.1** (patch) unless explicitly told otherwise.
+
+## IMPORTANT: Checksum Rule
+
+**Every time `repak_gui.py` is modified, regenerate `repak_gui.py.sha256` before committing:**
+
+```bash
+sha256sum repak_gui.py > repak_gui.py.sha256
+```
+
+The in-app update system fetches this file from the tagged commit on GitHub to verify the download. If it's missing or stale, users will see "No checksum file found" and the update will be blocked. The CI workflow validates the checksum matches on every build.
+
 ## Files Structure
 
 ```
