@@ -1,6 +1,6 @@
 # Overview
 
-v1.4.4 — tkinter GUI wrapper for `repak` CLI (Unreal Engine .pak). STALKER 2 modding tool. Single-file for easy distribution alongside repak binary.
+v1.4.5 — tkinter GUI wrapper for `repak` CLI (Unreal Engine .pak). STALKER 2 modding tool. Single-file for easy distribution alongside repak binary.
 
 ## Files
 - `repak_gui.py` — main app
