@@ -27,4 +27,4 @@
 Target: reliable STALKER 2 modding tool.
 Do not optimize: pack/unpack speed = repak binary + disk I/O.
 
-Version bumps default to **+0.0.1** unless told otherwise.
+Version bumps default to **+0.0.1** unless told otherwise. Each component 0–9; rollover on overflow (0.0.9 → 0.1.0).
