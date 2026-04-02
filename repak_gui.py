@@ -4,7 +4,7 @@ Repak GUI - A simple GUI wrapper for repak (Unreal Engine .pak tool)
 Designed for STALKER 2 modding
 """
 
-__version__ = "1.4.5"
+__version__ = "1.05"
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -23,7 +23,7 @@ from datetime import datetime
 
 # Optional imports for drag-and-drop support
 try:
-    from tkinterdnd2 import DND_FILES, TkinterDnD
+    from tkinterdnd2 import DND_FILES, TkinterDnD  # noqa: F401
     HAS_DND = True
 except ImportError:
     HAS_DND = False
@@ -1377,10 +1377,10 @@ https://github.com/trumank/repak
                     except subprocess.TimeoutExpired:
                         if process:
                             process.kill()
-                        self.root.after(0, self.log, f"  -> Timeout: process killed")
+                        self.root.after(0, self.log, "  -> Timeout: process killed")
                         fail_count += 1
                     except FileNotFoundError:
-                        self.root.after(0, self.log, f"  -> Error: repak binary not found")
+                        self.root.after(0, self.log, "  -> Error: repak binary not found")
                         fail_count += 1
                     except Exception as e:
                         self.root.after(0, self.log, f"  -> Error: {str(e)}")
@@ -1482,17 +1482,13 @@ https://github.com/trumank/repak
         except urllib.error.URLError as e:
             logging.error(f"Network error checking for updates: {e}")
             if not silent:
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Update Error",
-                    f"Failed to check for updates:\n{e}"
-                ))
+                msg = f"Failed to check for updates:\n{e}"
+                self.root.after(0, lambda m=msg: messagebox.showerror("Update Error", m))
         except Exception as e:
             logging.error(f"Error checking for updates: {e}")
             if not silent:
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Update Error",
-                    f"Failed to check for updates:\n{e}"
-                ))
+                msg = f"Failed to check for updates:\n{e}"
+                self.root.after(0, lambda m=msg: messagebox.showerror("Update Error", m))
 
     def _show_update_dialog(self, latest_version: str, release_data: dict) -> None:
         """Show update available dialog with options."""
@@ -1608,10 +1604,8 @@ https://github.com/trumank/repak
                     logging.info(f"Restored script from backup: {backup_path}")
             except Exception as restore_err:
                 logging.error(f"Failed to restore from backup: {restore_err}")
-            self.root.after(0, lambda: messagebox.showerror(
-                "Update Failed",
-                f"Failed to download update:\n{e}"
-            ))
+            msg = f"Failed to download update:\n{e}"
+            self.root.after(0, lambda m=msg: messagebox.showerror("Update Failed", m))
         finally:
             # Clean up temp file if it still exists
             if tmp_path is not None:
@@ -1636,7 +1630,7 @@ def main():
     except Exception:
         pass  # Continue with default theme if there's an error
 
-    app = RepakGUI(root)
+    RepakGUI(root)
     root.mainloop()
 
 
