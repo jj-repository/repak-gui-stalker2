@@ -89,33 +89,33 @@ jobs:
         path: dist/windows
 
     - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          dist/linux/RepakGUI-Linux
-          dist/windows/RepakGUI.exe
-        body: |
-          ## Downloads
+      run: |
+        gh release create "${{ github.ref_name }}" \
+          dist/linux/RepakGUI-Linux \
+          dist/windows/RepakGUI.exe \
+          --title "${{ github.ref_name }}" \
+          --notes "$(cat <<'NOTES'
+        ## Downloads
 
-          | File | Platform |
-          |------|----------|
-          | **RepakGUI.exe** | Windows |
-          | **RepakGUI-Linux** | Linux |
+        | File | Platform |
+        |------|----------|
+        | **RepakGUI.exe** | Windows |
+        | **RepakGUI-Linux** | Linux |
 
-          ## Installation
+        ## Installation
 
-          ### Windows
-          Download `RepakGUI.exe` and run it. Place `repak.exe` in the same directory.
+        ### Windows
+        Download `RepakGUI.exe` and run it. Place `repak.exe` in the same directory.
 
-          ### Linux
-          Download `RepakGUI-Linux`, make executable: `chmod +x RepakGUI-Linux`, run: `./RepakGUI-Linux`. Place `repak` binary in the same directory.
+        ### Linux
+        Download `RepakGUI-Linux`, make executable: `chmod +x RepakGUI-Linux`, run: `./RepakGUI-Linux`. Place `repak` binary in the same directory.
 
-          ## Keyboard Shortcuts
-          `Ctrl+O` Browse | `Ctrl+L` Clear log | `Ctrl+E` Export log | `Ctrl+Q` Quit | `Escape` Cancel
+        ## Keyboard Shortcuts
+        `Ctrl+O` Browse | `Ctrl+L` Clear log | `Ctrl+E` Export log | `Ctrl+Q` Quit | `Escape` Cancel
 
-          ---
-          Built automatically with GitHub Actions
-        draft: false
-        prerelease: false
+        ---
+        Built automatically with GitHub Actions
+        NOTES
+        )"
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
