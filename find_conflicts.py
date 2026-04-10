@@ -18,15 +18,7 @@ CONFLICTS_DIR = SCRIPT_DIR / "conflicts"
 HASH_CHUNK_SIZE = 8192
 
 def get_file_hash(filepath: Path) -> Optional[str]:
-    """
-    Get SHA-256 hash of file contents using chunked reading.
-
-    Args:
-        filepath: Path to the file to hash
-
-    Returns:
-        Hex digest of SHA-256 hash, or None if hashing failed
-    """
+    """Return SHA-256 hex digest of file, reading in chunks. Returns None on error."""
     hash_obj = hashlib.sha256()
     try:
         with open(filepath, 'rb') as f:
@@ -39,12 +31,7 @@ def get_file_hash(filepath: Path) -> Optional[str]:
         return None
 
 def find_cfg_files() -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Find all .cfg files and group by filename.
-
-    Returns:
-        Dictionary mapping filename to list of occurrence dictionaries
-    """
+    """Scan UNPACK_DIR recursively for .cfg files, grouped by filename."""
     if not UNPACK_DIR.exists():
         print(f"Error: Unpack directory not found: {UNPACK_DIR}", file=sys.stderr)
         return defaultdict(list)
@@ -82,15 +69,7 @@ def find_cfg_files() -> Dict[str, List[Dict[str, Any]]]:
     return cfg_files
 
 def find_conflicts(cfg_files: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
-    """
-    Find files that appear in multiple mods with different content.
-
-    Args:
-        cfg_files: Dictionary of filename to occurrence list from find_cfg_files()
-
-    Returns:
-        Dictionary of conflicting files with their occurrences and unique version count
-    """
+    """Return entries from cfg_files where the same filename has multiple distinct content versions."""
     conflicts: Dict[str, Dict[str, Any]] = {}
 
     for filename, occurrences in cfg_files.items():
@@ -120,22 +99,14 @@ def find_conflicts(cfg_files: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Dict
     return conflicts
 
 def copy_conflicts_to_folders(conflicts: Dict[str, Dict[str, Any]]) -> Optional[Path]:
-    """
-    Copy conflicting files to organized folders for comparison.
-
-    Args:
-        conflicts: Dictionary of conflicts from find_conflicts()
-
-    Returns:
-        Path to conflicts directory, or None if operation failed
-    """
+    """Copy conflicting files into CONFLICTS_DIR/<basename>/<mod>__<file> layout. Returns None on failure."""
     # Validate CONFLICTS_DIR before deletion
     if CONFLICTS_DIR.exists():
         # Safety check: ensure CONFLICTS_DIR is within expected location
         try:
             conflicts_parent = CONFLICTS_DIR.parent.resolve()
             if conflicts_parent != SCRIPT_DIR:
-                print(f"Error: CONFLICTS_DIR is not in expected location. Aborting.", file=sys.stderr)
+                print("Error: CONFLICTS_DIR is not in expected location. Aborting.", file=sys.stderr)
                 return None
             shutil.rmtree(CONFLICTS_DIR)
         except PermissionError as e:
@@ -196,12 +167,6 @@ def copy_conflicts_to_folders(conflicts: Dict[str, Dict[str, Any]]) -> Optional[
     return CONFLICTS_DIR
 
 def main() -> int:
-    """
-    Main entry point for conflict detection.
-
-    Returns:
-        Exit code (0 for success, 1 for error)
-    """
     print("Scanning for .cfg files...")
     cfg_files = find_cfg_files()
 
@@ -238,7 +203,7 @@ def main() -> int:
         print("\nError: Failed to copy conflict files.", file=sys.stderr)
         return 1
 
-    print(f"\nDone! Check the 'conflicts' folder.")
+    print("\nDone! Check the 'conflicts' folder.")
     print("Each subfolder contains all versions of a conflicting file.")
     print("Files are named: MODNAME__originalfilename.cfg")
     return 0

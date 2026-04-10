@@ -88,11 +88,21 @@ jobs:
         name: windows-executable
         path: dist/windows
 
+    - name: Generate SHA256SUMS
+      run: |
+        sha256sum repak_gui.py > SHA256SUMS
+        sha256sum dist/linux/RepakGUI-Linux >> SHA256SUMS
+        sha256sum dist/windows/RepakGUI.exe >> SHA256SUMS
+        # Normalize paths to filenames only
+        sed -i 's|  .*/|  |' SHA256SUMS
+        cat SHA256SUMS
+
     - name: Create Release
       run: |
         gh release create "${{ github.ref_name }}" \
           dist/linux/RepakGUI-Linux \
           dist/windows/RepakGUI.exe \
+          SHA256SUMS \
           --title "${{ github.ref_name }}" \
           --notes "$(cat <<'NOTES'
         ## Downloads
@@ -101,6 +111,7 @@ jobs:
         |------|----------|
         | **RepakGUI.exe** | Windows |
         | **RepakGUI-Linux** | Linux |
+        | **SHA256SUMS** | Checksums |
 
         ## Installation
 

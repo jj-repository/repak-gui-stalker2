@@ -21,13 +21,6 @@ from pathlib import Path
 from typing import Optional, List, Callable, Dict, Any
 from datetime import datetime
 
-# Optional imports for drag-and-drop support
-try:
-    from tkinterdnd2 import DND_FILES, TkinterDnD  # noqa: F401
-    HAS_DND = True
-except ImportError:
-    HAS_DND = False
-
 # UI Constants
 WINDOW_WIDTH = 700
 WINDOW_HEIGHT = 500
@@ -39,7 +32,7 @@ LOG_FONT_SIZE = 9
 # Process Constants
 SUBPROCESS_TIMEOUT = 3600  # 1 hour timeout for long operations
 PROCESS_POLL_INTERVAL = 0.1  # Seconds between process output polls
-IS_WINDOWS = sys.platform.startswith('win')
+IS_WINDOWS = sys.platform.startswith("win")
 
 # Configuration
 CONFIG_FILE = "repak_gui_config.json"
@@ -47,8 +40,8 @@ LOG_FILE = "repak_gui.log"
 MAX_RECENT_FILES = 10
 
 # AES key validation pattern (hex or base64)
-AES_KEY_HEX_PATTERN = re.compile(r'^[0-9a-fA-F]{64}$')  # 256-bit hex
-AES_KEY_BASE64_PATTERN = re.compile(r'^[A-Za-z0-9+/]{43}=?$')  # Base64 256-bit
+AES_KEY_HEX_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")  # 256-bit hex
+AES_KEY_BASE64_PATTERN = re.compile(r"^[A-Za-z0-9+/]{43}=?$")  # Base64 256-bit
 
 # Update Constants
 GITHUB_REPO = "jj-repository/repak-gui-stalker2"
@@ -60,6 +53,7 @@ GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}"
 def setup_logging():
     """Setup logging configuration with log file in script directory using rotation"""
     from logging.handlers import RotatingFileHandler
+
     script_dir = Path(__file__).parent.resolve()
     log_path = script_dir / LOG_FILE
 
@@ -67,32 +61,28 @@ def setup_logging():
     # Max 5MB per file, keep 3 backup files
     file_handler = RotatingFileHandler(
         log_path,
-        maxBytes=5*1024*1024,  # 5MB
+        maxBytes=5 * 1024 * 1024,  # 5MB
         backupCount=3,
-        encoding='utf-8'
+        encoding="utf-8",
     )
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
 
     stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    stream_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
 
     logging.basicConfig(
         level=logging.INFO,
         handlers=[file_handler, stream_handler],
-        force=True  # Override any existing configuration
+        force=True,  # Override any existing configuration
     )
 
 
 def validate_aes_key(key: str) -> bool:
-    """
-    Validate AES key format (hex or base64).
-
-    Args:
-        key: The AES key string to validate
-
-    Returns:
-        True if key appears to be valid format, False otherwise
-    """
+    """Validate AES key format: accepts empty, 64-char hex, 0x-prefixed hex, or base64."""
     if not key:
         return True  # Empty key is valid (means no encryption)
 
@@ -107,7 +97,7 @@ def validate_aes_key(key: str) -> bool:
     if AES_KEY_BASE64_PATTERN.match(key):
         return True
     # Also accept 0x prefixed hex
-    if key.startswith('0x') and AES_KEY_HEX_PATTERN.match(key[2:]):
+    if key.startswith("0x") and AES_KEY_HEX_PATTERN.match(key[2:]):
         return True
     return False
 
@@ -117,74 +107,68 @@ class RepakGUI:
         self.root = root
         self.root.title(f"Repak GUI - STALKER 2 Pak Tool v{__version__}")
 
-        # Find repak binary (same directory as script)
         self.script_dir = Path(__file__).parent.resolve()
         self.repak_path = self._find_repak_binary()
         self.config_path = self.script_dir / CONFIG_FILE
         self.log_path = self.script_dir / LOG_FILE
 
-        # Thread lock for shared state access
         self._lock = threading.Lock()
         self._operation_in_progress = False  # Flag for atomic operation start check
 
-        # Fixed output directories
         self.unpack_dir = self.script_dir / "unpackedfiles"
         self.pack_dir = self.script_dir / "packedfiles"
 
-        # Operation cancellation support
         self.cancel_requested = False
         self.current_process: Optional[subprocess.Popen] = None
         self.operation_thread: Optional[threading.Thread] = None
 
-        # Batch unpack state
         self.batch_pak_files: List[str] = []
 
-        # Recent files tracking
         self.recent_files: List[str] = []
 
-        # Load configuration
         self._load_config()
 
-        # Apply window geometry from config or defaults
-        geometry = self.config.get('window_geometry', f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        geometry = self.config.get("window_geometry", f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         # Validate geometry string format (WIDTHxHEIGHT or WIDTHxHEIGHT+X+Y)
-        if not re.match(r'^\d+x\d+([+-]\d+[+-]\d+)?$', geometry):
+        if not re.match(r"^\d+x\d+([+-]\d+[+-]\d+)?$", geometry):
             logging.warning(f"Invalid geometry string '{geometry}', using defaults")
             geometry = f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}"
         self.root.geometry(geometry)
         self.root.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
 
-        # Create output directories if they don't exist
         try:
             self.unpack_dir.mkdir(exist_ok=True)
             self.pack_dir.mkdir(exist_ok=True)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to create output directories:\n{str(e)}")
+            messagebox.showerror(
+                "Error", f"Failed to create output directories:\n{str(e)}"
+            )
             logging.error(f"Failed to create output directories: {e}")
 
-        # Validate repak binary
         if not self._validate_repak_binary():
-            messagebox.showerror("Error",
+            messagebox.showerror(
+                "Error",
                 f"repak binary not found or not executable at:\n{self.repak_path}\n\n"
-                "Please ensure the repak binary is present and has execute permissions.")
+                "Please ensure the repak binary is present and has execute permissions.",
+            )
             logging.error("repak binary validation failed")
 
-        # Setup UI
         self.setup_ui()
 
-        # Bind keyboard shortcuts
         self._setup_keyboard_shortcuts()
 
-        # Save config on close
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
-        # Register cleanup for unexpected exits (e.g., SIGTERM, crash)
         atexit.register(self._cleanup_subprocess)
 
         # Check for updates on startup if enabled (delay to let UI initialize)
-        if self.config.get('auto_check_updates', True):
-            self.root.after(2000, lambda: threading.Thread(
-                target=self._check_for_updates, args=(True,), daemon=True).start())
+        if self.config.get("auto_check_updates", True):
+            self.root.after(
+                2000,
+                lambda: threading.Thread(
+                    target=self._check_for_updates, args=(True,), daemon=True
+                ).start(),
+            )
 
         logging.info("RepakGUI initialized successfully")
 
@@ -215,7 +199,10 @@ class RepakGUI:
             is_executable = bool(st.st_mode & stat.S_IXUSR)
             if not is_executable:
                 # Try to make it executable
-                os.chmod(self.repak_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                os.chmod(
+                    self.repak_path,
+                    st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+                )
             return True
         except OSError as e:
             logging.error(f"Failed to validate/chmod repak binary: {e}")
@@ -224,27 +211,27 @@ class RepakGUI:
     def _load_config(self) -> None:
         """Load configuration from JSON file"""
         default_config: Dict[str, Any] = {
-            'window_geometry': f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}",
-            'recent_files': [],
-            'last_unpack_dir': '',
-            'last_pack_dir': '',
-            'auto_check_updates': True,
+            "window_geometry": f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}",
+            "recent_files": [],
+            "last_unpack_dir": "",
+            "last_pack_dir": "",
+            "auto_check_updates": True,
         }
         # Note: AES keys are intentionally NOT stored in config for security
 
         try:
             if self.config_path.exists():
-                with open(self.config_path, 'r', encoding='utf-8') as f:
+                with open(self.config_path, "r", encoding="utf-8") as f:
                     self.config = json.load(f)
                     # Remove any legacy AES key storage for security
-                    if 'last_aes_key' in self.config:
-                        del self.config['last_aes_key']
+                    if "last_aes_key" in self.config:
+                        del self.config["last_aes_key"]
                         logging.info("Removed legacy AES key from config for security")
                     # Merge with defaults for any missing keys
                     for key, value in default_config.items():
                         if key not in self.config:
                             self.config[key] = value
-                    self.recent_files = list(self.config.get('recent_files', []))
+                    self.recent_files = list(self.config.get("recent_files", []))
                     logging.info("Configuration loaded successfully")
             else:
                 self.config = default_config
@@ -260,21 +247,17 @@ class RepakGUI:
         """Save configuration to JSON file using atomic write"""
         temp_path = None
         try:
-            # Update config with current state and perform file write within lock
-            # to prevent concurrent saves from corrupting data
             with self._lock:
-                self.config['window_geometry'] = self.root.geometry()
-                self.config['recent_files'] = self.recent_files[:MAX_RECENT_FILES]
+                self.config["window_geometry"] = self.root.geometry()
+                self.config["recent_files"] = self.recent_files[:MAX_RECENT_FILES]
                 config_copy = dict(self.config)
 
-                # Write to temp file first, then rename atomically to prevent corruption
-                temp_path = self.config_path.with_suffix('.json.tmp')
-                with open(temp_path, 'w', encoding='utf-8') as f:
+                temp_path = self.config_path.with_suffix(".json.tmp")
+                with open(temp_path, "w", encoding="utf-8") as f:
                     json.dump(config_copy, f, indent=2)
                     f.flush()
                     os.fsync(f.fileno())  # Ensure data is written to disk
 
-                # Atomic rename
                 if IS_WINDOWS:
                     # Windows: use os.replace which is atomic when on same filesystem
                     os.replace(str(temp_path), str(self.config_path))
@@ -284,7 +267,6 @@ class RepakGUI:
             logging.info("Configuration saved successfully")
         except (IOError, OSError) as e:
             logging.error(f"Failed to save config: {e}")
-            # Clean up temp file if it exists - best effort, can't do anything if cleanup fails
             if temp_path is not None:
                 try:
                     if temp_path.exists():
@@ -294,10 +276,8 @@ class RepakGUI:
 
     def _on_closing(self) -> None:
         """Handle window close event"""
-        # Save configuration
         self._save_config()
 
-        # Cancel any running operations (thread-safe)
         with self._lock:
             self.cancel_requested = True
             process_to_terminate = self.current_process
@@ -310,7 +290,6 @@ class RepakGUI:
             except Exception as e:
                 logging.error(f"Error terminating process on close: {e}")
 
-        # Destroy window
         self.root.destroy()
 
     def _cleanup_subprocess(self) -> None:
@@ -329,20 +308,15 @@ class RepakGUI:
 
     def _setup_keyboard_shortcuts(self) -> None:
         """Setup keyboard shortcuts"""
-        # Ctrl+Q - Quit
-        self.root.bind('<Control-q>', lambda e: self._on_closing())
+        self.root.bind("<Control-q>", lambda e: self._on_closing())
 
-        # Ctrl+L - Clear log
-        self.root.bind('<Control-l>', lambda e: self.clear_log())
+        self.root.bind("<Control-l>", lambda e: self.clear_log())
 
-        # Ctrl+O - Open/Browse pak file (on unpack tab)
-        self.root.bind('<Control-o>', lambda e: self.browse_pak_file())
+        self.root.bind("<Control-o>", lambda e: self.browse_pak_file())
 
-        # Ctrl+E - Export log
-        self.root.bind('<Control-e>', lambda e: self.export_log())
+        self.root.bind("<Control-e>", lambda e: self.export_log())
 
-        # Escape - Cancel operation
-        self.root.bind('<Escape>', lambda e: self.cancel_operation())
+        self.root.bind("<Escape>", lambda e: self.cancel_operation())
 
         logging.info("Keyboard shortcuts configured")
 
@@ -358,16 +332,18 @@ class RepakGUI:
 
     def _update_recent_files_menu(self) -> None:
         """Update the recent files menu"""
-        if hasattr(self, 'recent_menu'):
-            self.recent_menu.delete(0, 'end')
+        if hasattr(self, "recent_menu"):
+            self.recent_menu.delete(0, "end")
             if self.recent_files:
                 for filepath in self.recent_files:
                     self.recent_menu.add_command(
                         label=Path(filepath).name,
-                        command=lambda f=filepath: self._load_recent_file(f)
+                        command=lambda f=filepath: self._load_recent_file(f),
                     )
             else:
-                self.recent_menu.add_command(label="(No recent files)", state='disabled')
+                self.recent_menu.add_command(
+                    label="(No recent files)", state="disabled"
+                )
 
     def _load_recent_file(self, filepath: str) -> None:
         """Load a file from recent files"""
@@ -375,8 +351,9 @@ class RepakGUI:
             self.unpack_pak_var.set(filepath)
             logging.info(f"Loaded recent file: {filepath}")
         else:
-            messagebox.showwarning("File Not Found",
-                f"The file no longer exists:\n{filepath}")
+            messagebox.showwarning(
+                "File Not Found", f"The file no longer exists:\n{filepath}"
+            )
             with self._lock:
                 try:
                     self.recent_files.remove(filepath)
@@ -394,7 +371,6 @@ class RepakGUI:
             else:
                 return  # Nothing to cancel
 
-        # Log outside lock to avoid holding it during I/O
         self.log("⚠️ Cancellation requested...")
         logging.info("User requested operation cancellation")
 
@@ -416,15 +392,16 @@ class RepakGUI:
                 title="Export Log",
                 defaultextension=".txt",
                 filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-                initialfile=f"repak_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                initialfile=f"repak_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
             )
 
             if filename:
                 log_content = self.log_text.get(1.0, tk.END)
-                with open(filename, 'w', encoding='utf-8') as f:
+                with open(filename, "w", encoding="utf-8") as f:
                     f.write(log_content)
-                messagebox.showinfo("Export Complete",
-                    f"Log exported successfully to:\n{filename}")
+                messagebox.showinfo(
+                    "Export Complete", f"Log exported successfully to:\n{filename}"
+                )
                 logging.info(f"Log exported to: {filename}")
         except Exception as e:
             messagebox.showerror("Export Failed", f"Failed to export log:\n{str(e)}")
@@ -470,42 +447,35 @@ https://github.com/trumank/repak
         """Toggle visibility of AES key entry field"""
         if self.aes_show_var.get():
             # Currently showing, hide it
-            self.aes_entry.config(show='*')
+            self.aes_entry.config(show="*")
             self.aes_toggle_btn.config(text="Show")
             self.aes_show_var.set(False)
         else:
             # Currently hidden, show it
-            self.aes_entry.config(show='')
+            self.aes_entry.config(show="")
             self.aes_toggle_btn.config(text="Hide")
             self.aes_show_var.set(True)
 
     def _validate_path(self, path_str: str, must_exist: bool = True) -> Optional[Path]:
-        """
-        Validate and sanitize a file path to prevent path traversal attacks.
-
-        Args:
-            path_str: Path string to validate
-            must_exist: Whether the path must already exist
-
-        Returns:
-            Path object if valid, None otherwise
-        """
+        """Validate and resolve path, rejecting null bytes and traversal patterns. Returns None on failure."""
         try:
             # Security: Reject empty paths
             if not path_str or not path_str.strip():
                 return None
 
             # Security: Reject paths with null bytes
-            if '\x00' in path_str:
+            if "\x00" in path_str:
                 logging.warning(f"Rejected path with null byte: {repr(path_str)}")
                 return None
 
             # Security: Reject paths with suspicious traversal patterns before resolution
-            suspicious_patterns = ['../', '..\\', '/../', '\\..\\']
+            suspicious_patterns = ["../", "..\\", "/../", "\\..\\"]
             path_lower = path_str.lower()
             for pattern in suspicious_patterns:
                 if pattern in path_lower:
-                    logging.warning(f"Rejected path with suspicious pattern '{pattern}': {path_str}")
+                    logging.warning(
+                        f"Rejected path with suspicious pattern '{pattern}': {path_str}"
+                    )
                     return None
 
             path = Path(path_str).resolve()
@@ -516,8 +486,10 @@ https://github.com/trumank/repak
 
             # Security: Verify the resolved path doesn't contain traversal sequences
             resolved_str = str(path)
-            if '..' in resolved_str:
-                logging.warning(f"Rejected resolved path containing '..': {resolved_str}")
+            if ".." in resolved_str:
+                logging.warning(
+                    f"Rejected resolved path containing '..': {resolved_str}"
+                )
                 return None
 
             return path
@@ -527,16 +499,7 @@ https://github.com/trumank/repak
             return None
 
     def _redact_aes_key(self, cmd_list: List[str]) -> str:
-        """
-        Create a redacted version of command for logging.
-        Replaces AES key value with [REDACTED] for security.
-
-        Args:
-            cmd_list: List of command arguments
-
-        Returns:
-            String representation with AES key redacted
-        """
+        """Return command string with AES key value replaced by [REDACTED]."""
         redacted = []
         redact_next = False
 
@@ -550,166 +513,190 @@ https://github.com/trumank/repak
             else:
                 redacted.append(str(item))
 
-        return ' '.join(redacted)
+        return " ".join(redacted)
 
     def setup_ui(self) -> None:
         """Setup the user interface"""
-        # Create menu bar
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
 
-        # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
 
-        # Recent files submenu
         self.recent_menu = tk.Menu(file_menu, tearoff=0)
         file_menu.add_cascade(label="Recent Files", menu=self.recent_menu)
         self._update_recent_files_menu()
 
         file_menu.add_separator()
-        file_menu.add_command(label="Export Log", command=self.export_log, accelerator="Ctrl+E")
+        file_menu.add_command(
+            label="Export Log", command=self.export_log, accelerator="Ctrl+E"
+        )
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self._on_closing, accelerator="Ctrl+Q")
+        file_menu.add_command(
+            label="Exit", command=self._on_closing, accelerator="Ctrl+Q"
+        )
 
-        # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
-        help_menu.add_command(label="Check for Updates", command=self._check_for_updates_clicked)
+        help_menu.add_command(
+            label="Check for Updates", command=self._check_for_updates_clicked
+        )
 
-        # Auto-check updates toggle
-        self.auto_check_var = tk.BooleanVar(value=self.config.get('auto_check_updates', True))
+        self.auto_check_var = tk.BooleanVar(
+            value=self.config.get("auto_check_updates", True)
+        )
         help_menu.add_checkbutton(
             label="Check for Updates on Startup",
             variable=self.auto_check_var,
-            command=self._toggle_auto_check_updates
+            command=self._toggle_auto_check_updates,
         )
         help_menu.add_separator()
         help_menu.add_command(label="Keyboard Shortcuts", command=self._show_shortcuts)
         help_menu.add_separator()
         help_menu.add_command(label="About", command=self._show_about)
 
-        # Main container with padding
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Create notebook for tabs
         notebook = ttk.Notebook(main_frame)
         notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-        # Unpack tab
         unpack_frame = ttk.Frame(notebook, padding="10")
         notebook.add(unpack_frame, text="Unpack")
         self.setup_unpack_tab(unpack_frame)
 
-        # Pack tab
         pack_frame = ttk.Frame(notebook, padding="10")
         notebook.add(pack_frame, text="Pack")
         self.setup_pack_tab(pack_frame)
 
-        # Info tab
         info_frame = ttk.Frame(notebook, padding="10")
         notebook.add(info_frame, text="Info/List")
         self.setup_info_tab(info_frame)
 
-        # Batch Unpack tab
         batch_frame = ttk.Frame(notebook, padding="10")
         notebook.add(batch_frame, text="Batch Unpack")
         self.setup_batch_unpack_tab(batch_frame)
 
-        # AES Key section (shared)
-        aes_frame = ttk.LabelFrame(main_frame, text="AES-256 Key (for encrypted paks)", padding="5")
+        aes_frame = ttk.LabelFrame(
+            main_frame, text="AES-256 Key (for encrypted paks)", padding="5"
+        )
         aes_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.aes_key_var = tk.StringVar()
         ttk.Label(aes_frame, text="Key (base64 or hex):").pack(side=tk.LEFT)
-        self.aes_entry = ttk.Entry(aes_frame, textvariable=self.aes_key_var, width=60, show='*')
+        self.aes_entry = ttk.Entry(
+            aes_frame, textvariable=self.aes_key_var, width=60, show="*"
+        )
         self.aes_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
 
-        # Toggle button to show/hide AES key
         self.aes_show_var = tk.BooleanVar(value=False)
-        self.aes_toggle_btn = ttk.Button(aes_frame, text="Show", width=6, command=self._toggle_aes_visibility)
+        self.aes_toggle_btn = ttk.Button(
+            aes_frame, text="Show", width=6, command=self._toggle_aes_visibility
+        )
         self.aes_toggle_btn.pack(side=tk.LEFT, padx=(5, 0))
 
-        # Progress bar (initially hidden)
         self.progress_frame = ttk.Frame(main_frame)
         self.progress_frame.pack(fill=tk.X, pady=(0, 5))
 
         self.progress_label = ttk.Label(self.progress_frame, text="Working...")
         self.progress_label.pack(side=tk.LEFT, padx=(0, 10))
 
-        self.progress_bar = ttk.Progressbar(self.progress_frame, mode='indeterminate', length=300)
+        self.progress_bar = ttk.Progressbar(
+            self.progress_frame, mode="indeterminate", length=300
+        )
         self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
-        # Cancel button (for cancelling operations)
-        self.cancel_button = ttk.Button(self.progress_frame, text="Cancel", command=self.cancel_operation)
+        self.cancel_button = ttk.Button(
+            self.progress_frame, text="Cancel", command=self.cancel_operation
+        )
         self.cancel_button.pack(side=tk.LEFT)
 
-        # Hide progress bar initially
         self.progress_frame.pack_forget()
 
-        # Output log
         log_frame = ttk.LabelFrame(main_frame, text="Output Log", padding="5")
         log_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=10, state=tk.DISABLED,
-                                                   font=("Monospace", LOG_FONT_SIZE))
+        self.log_text = scrolledtext.ScrolledText(
+            log_frame, height=10, state=tk.DISABLED, font=("Monospace", LOG_FONT_SIZE)
+        )
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
-        # Bottom button row
         btn_row = ttk.Frame(log_frame)
         btn_row.pack(pady=(5, 0))
-        ttk.Button(btn_row, text="Clear Log", command=self.clear_log).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_row, text="Check for Updates", command=self._check_for_updates_clicked).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_row, text="Clear Log", command=self.clear_log).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(
+            btn_row, text="Check for Updates", command=self._check_for_updates_clicked
+        ).pack(side=tk.LEFT, padx=5)
 
     def setup_unpack_tab(self, parent):
-        # Pak file selection
         pak_frame = ttk.Frame(parent)
         pak_frame.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Label(pak_frame, text="Pak File:").pack(side=tk.LEFT)
         self.unpack_pak_var = tk.StringVar()
-        ttk.Entry(pak_frame, textvariable=self.unpack_pak_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        ttk.Button(pak_frame, text="Browse...", command=self.browse_pak_file).pack(side=tk.LEFT)
+        ttk.Entry(pak_frame, textvariable=self.unpack_pak_var, width=50).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5
+        )
+        ttk.Button(pak_frame, text="Browse...", command=self.browse_pak_file).pack(
+            side=tk.LEFT
+        )
 
-        # Unpack button
-        ttk.Button(parent, text="Unpack", command=self.do_unpack, style="Accent.TButton").pack(pady=10)
+        ttk.Button(
+            parent, text="Unpack", command=self.do_unpack, style="Accent.TButton"
+        ).pack(pady=10)
 
-        # Help text
-        ttk.Label(parent, text="Select a .pak file to extract its contents.",
-                  foreground="gray").pack()
-        ttk.Label(parent, text=f"Output: {self.unpack_dir}",
-                  foreground="blue").pack(pady=(5, 0))
+        ttk.Label(
+            parent,
+            text="Select a .pak file to extract its contents.",
+            foreground="gray",
+        ).pack()
+        ttk.Label(parent, text=f"Output: {self.unpack_dir}", foreground="blue").pack(
+            pady=(5, 0)
+        )
 
     def setup_pack_tab(self, parent):
-        # Source directory selection
         src_frame = ttk.Frame(parent)
         src_frame.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Label(src_frame, text="Source Dir:").pack(side=tk.LEFT)
         self.pack_source_var = tk.StringVar()
-        ttk.Entry(src_frame, textvariable=self.pack_source_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        ttk.Button(src_frame, text="Browse...", command=self.browse_source_dir).pack(side=tk.LEFT)
+        ttk.Entry(src_frame, textvariable=self.pack_source_var, width=50).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5
+        )
+        ttk.Button(src_frame, text="Browse...", command=self.browse_source_dir).pack(
+            side=tk.LEFT
+        )
 
-        # Pak name entry
         name_frame = ttk.Frame(parent)
         name_frame.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Label(name_frame, text="Pak Name:").pack(side=tk.LEFT)
         self.pack_name_var = tk.StringVar()
-        ttk.Entry(name_frame, textvariable=self.pack_name_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        ttk.Entry(name_frame, textvariable=self.pack_name_var, width=50).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5
+        )
         ttk.Label(name_frame, text=".pak").pack(side=tk.LEFT)
 
-        # Pack button
-        ttk.Button(parent, text="Pack", command=self.do_pack, style="Accent.TButton").pack(pady=10)
+        ttk.Button(
+            parent, text="Pack", command=self.do_pack, style="Accent.TButton"
+        ).pack(pady=10)
 
         # Help text
-        ttk.Label(parent, text="Select a folder containing your mod files to pack.",
-                  foreground="gray").pack()
-        ttk.Label(parent, text="Tip: For STALKER 2, use ~mods prefix (e.g., ~mods_mymod_P)",
-                  foreground="gray").pack()
-        ttk.Label(parent, text=f"Output: {self.pack_dir}",
-                  foreground="blue").pack(pady=(5, 0))
+        ttk.Label(
+            parent,
+            text="Select a folder containing your mod files to pack.",
+            foreground="gray",
+        ).pack()
+        ttk.Label(
+            parent,
+            text="Tip: For STALKER 2, use ~mods prefix (e.g., ~mods_mymod_P)",
+            foreground="gray",
+        ).pack()
+        ttk.Label(parent, text=f"Output: {self.pack_dir}", foreground="blue").pack(
+            pady=(5, 0)
+        )
 
     def setup_info_tab(self, parent):
         # Pak file selection for info
@@ -718,76 +705,114 @@ https://github.com/trumank/repak
 
         ttk.Label(pak_frame, text="Pak File:").pack(side=tk.LEFT)
         self.info_pak_var = tk.StringVar()
-        ttk.Entry(pak_frame, textvariable=self.info_pak_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        ttk.Button(pak_frame, text="Browse...", command=self.browse_info_pak).pack(side=tk.LEFT)
+        ttk.Entry(pak_frame, textvariable=self.info_pak_var, width=50).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=5
+        )
+        ttk.Button(pak_frame, text="Browse...", command=self.browse_info_pak).pack(
+            side=tk.LEFT
+        )
 
         # Buttons frame
         btn_frame = ttk.Frame(parent)
         btn_frame.pack(pady=10)
 
-        ttk.Button(btn_frame, text="Show Info", command=self.do_info).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="List Contents", command=self.do_list).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Show Info", command=self.do_info).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(btn_frame, text="List Contents", command=self.do_list).pack(
+            side=tk.LEFT, padx=5
+        )
 
         # Help text
-        ttk.Label(parent, text="View metadata or list contents of a pak file.",
-                  foreground="gray").pack()
+        ttk.Label(
+            parent,
+            text="View metadata or list contents of a pak file.",
+            foreground="gray",
+        ).pack()
 
     def setup_batch_unpack_tab(self, parent):
-        # File list section
         list_frame = ttk.LabelFrame(parent, text="Pak Files to Unpack", padding="5")
         list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-        # Listbox with scrollbar
         list_container = ttk.Frame(list_frame)
         list_container.pack(fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(list_container)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.batch_listbox = tk.Listbox(list_container, yscrollcommand=scrollbar.set,
-                                         selectmode=tk.EXTENDED, font=("Monospace", LOG_FONT_SIZE))
+        self.batch_listbox = tk.Listbox(
+            list_container,
+            yscrollcommand=scrollbar.set,
+            selectmode=tk.EXTENDED,
+            font=("Monospace", LOG_FONT_SIZE),
+        )
         self.batch_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.batch_listbox.yview)
 
-        # Context menu for batch list
         self.batch_context_menu = tk.Menu(self.batch_listbox, tearoff=0)
-        self.batch_context_menu.add_command(label="Remove Selected", command=self.batch_remove_selected)
-        self.batch_context_menu.add_command(label="Clear All", command=self.batch_clear_all)
+        self.batch_context_menu.add_command(
+            label="Remove Selected", command=self.batch_remove_selected
+        )
+        self.batch_context_menu.add_command(
+            label="Clear All", command=self.batch_clear_all
+        )
         self.batch_context_menu.add_separator()
-        self.batch_context_menu.add_command(label="Move Up", command=self._batch_move_up)
-        self.batch_context_menu.add_command(label="Move Down", command=self._batch_move_down)
+        self.batch_context_menu.add_command(
+            label="Move Up", command=self._batch_move_up
+        )
+        self.batch_context_menu.add_command(
+            label="Move Down", command=self._batch_move_down
+        )
 
-        # Bind right-click to show context menu
         self.batch_listbox.bind("<Button-3>", self._show_batch_context_menu)
 
-        # Buttons for adding/removing files
         btn_frame = ttk.Frame(list_frame)
         btn_frame.pack(fill=tk.X, pady=(5, 0))
 
-        ttk.Button(btn_frame, text="Add Files...", command=self.batch_add_files).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_frame, text="Add Folder...", command=self.batch_add_folder).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_frame, text="Remove Selected", command=self.batch_remove_selected).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_frame, text="Clear All", command=self.batch_clear_all).pack(side=tk.LEFT)
+        ttk.Button(btn_frame, text="Add Files...", command=self.batch_add_files).pack(
+            side=tk.LEFT, padx=(0, 5)
+        )
+        ttk.Button(btn_frame, text="Add Folder...", command=self.batch_add_folder).pack(
+            side=tk.LEFT, padx=(0, 5)
+        )
+        ttk.Button(
+            btn_frame, text="Remove Selected", command=self.batch_remove_selected
+        ).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="Clear All", command=self.batch_clear_all).pack(
+            side=tk.LEFT
+        )
 
-        # File count label
         self.batch_count_var = tk.StringVar(value="0 files selected")
-        ttk.Label(btn_frame, textvariable=self.batch_count_var, foreground="gray").pack(side=tk.RIGHT)
+        ttk.Label(btn_frame, textvariable=self.batch_count_var, foreground="gray").pack(
+            side=tk.RIGHT
+        )
 
-        # Unpack button
-        ttk.Button(parent, text="Unpack All", command=self.do_batch_unpack, style="Accent.TButton").pack(pady=10)
+        ttk.Button(
+            parent,
+            text="Unpack All",
+            command=self.do_batch_unpack,
+            style="Accent.TButton",
+        ).pack(pady=10)
 
         # Help text
-        ttk.Label(parent, text="Add multiple .pak files or a folder containing .pak files.",
-                  foreground="gray").pack()
-        ttk.Label(parent, text="Each pak will be unpacked into its own folder.",
-                  foreground="gray").pack()
-        ttk.Label(parent, text=f"Output: {self.unpack_dir}",
-                  foreground="blue").pack(pady=(5, 0))
+        ttk.Label(
+            parent,
+            text="Add multiple .pak files or a folder containing .pak files.",
+            foreground="gray",
+        ).pack()
+        ttk.Label(
+            parent,
+            text="Each pak will be unpacked into its own folder.",
+            foreground="gray",
+        ).pack()
+        ttk.Label(parent, text=f"Output: {self.unpack_dir}", foreground="blue").pack(
+            pady=(5, 0)
+        )
 
     def browse_pak_file(self):
         filename = filedialog.askopenfilename(
             title="Select Pak File",
-            filetypes=[("Pak files", "*.pak"), ("All files", "*.*")]
+            filetypes=[("Pak files", "*.pak"), ("All files", "*.*")],
         )
         if filename:
             self.unpack_pak_var.set(filename)
@@ -796,14 +821,13 @@ https://github.com/trumank/repak
         dirname = filedialog.askdirectory(title="Select Source Directory")
         if dirname:
             self.pack_source_var.set(dirname)
-            # Auto-set pak name based on folder name
             dir_path = Path(dirname)
             self.pack_name_var.set(dir_path.name)
 
     def browse_info_pak(self):
         filename = filedialog.askopenfilename(
             title="Select Pak File",
-            filetypes=[("Pak files", "*.pak"), ("All files", "*.*")]
+            filetypes=[("Pak files", "*.pak"), ("All files", "*.*")],
         )
         if filename:
             self.info_pak_var.set(filename)
@@ -812,7 +836,7 @@ https://github.com/trumank/repak
         """Add multiple pak files to the batch list"""
         filenames = filedialog.askopenfilenames(
             title="Select Pak Files",
-            filetypes=[("Pak files", "*.pak"), ("All files", "*.*")]
+            filetypes=[("Pak files", "*.pak"), ("All files", "*.*")],
         )
         for filename in filenames:
             if filename not in self.batch_pak_files:
@@ -827,7 +851,9 @@ https://github.com/trumank/repak
             folder = Path(dirname)
             pak_files = list(folder.glob("*.pak"))
             if not pak_files:
-                messagebox.showinfo("Info", "No .pak files found in the selected folder.")
+                messagebox.showinfo(
+                    "Info", "No .pak files found in the selected folder."
+                )
                 return
             for pak_file in pak_files:
                 pak_path = str(pak_file)
@@ -839,9 +865,7 @@ https://github.com/trumank/repak
     def batch_remove_selected(self):
         """Remove selected items from the batch list"""
         selected = self.batch_listbox.curselection()
-        # Remove in reverse order to preserve indices
         for index in reversed(selected):
-            # Bounds check before deletion
             if 0 <= index < len(self.batch_pak_files):
                 self.batch_listbox.delete(index)
                 del self.batch_pak_files[index]
@@ -874,14 +898,16 @@ https://github.com/trumank/repak
         for index in selected:
             if index > 0:
                 # Swap in list
-                self.batch_pak_files[index], self.batch_pak_files[index-1] = \
-                    self.batch_pak_files[index-1], self.batch_pak_files[index]
+                self.batch_pak_files[index], self.batch_pak_files[index - 1] = (
+                    self.batch_pak_files[index - 1],
+                    self.batch_pak_files[index],
+                )
 
                 # Swap in listbox
                 item = self.batch_listbox.get(index)
                 self.batch_listbox.delete(index)
-                self.batch_listbox.insert(index-1, item)
-                self.batch_listbox.selection_set(index-1)
+                self.batch_listbox.insert(index - 1, item)
+                self.batch_listbox.selection_set(index - 1)
 
     def _batch_move_down(self) -> None:
         """Move selected items down in the list"""
@@ -892,23 +918,25 @@ https://github.com/trumank/repak
         for index in reversed(selected):
             if index < len(self.batch_pak_files) - 1:
                 # Swap in list
-                self.batch_pak_files[index], self.batch_pak_files[index+1] = \
-                    self.batch_pak_files[index+1], self.batch_pak_files[index]
+                self.batch_pak_files[index], self.batch_pak_files[index + 1] = (
+                    self.batch_pak_files[index + 1],
+                    self.batch_pak_files[index],
+                )
 
                 # Swap in listbox
                 item = self.batch_listbox.get(index)
                 self.batch_listbox.delete(index)
-                self.batch_listbox.insert(index+1, item)
-                self.batch_listbox.selection_set(index+1)
+                self.batch_listbox.insert(index + 1, item)
+                self.batch_listbox.selection_set(index + 1)
 
     def log(self, message: str) -> None:
         MAX_LOG_LINES = 5000
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, message + "\n")
         # Limit log to MAX_LOG_LINES to prevent unbounded memory growth
-        line_count = int(self.log_text.index('end-1c').split('.')[0])
+        line_count = int(self.log_text.index("end-1c").split(".")[0])
         if line_count > MAX_LOG_LINES:
-            self.log_text.delete('1.0', f'{line_count - MAX_LOG_LINES}.0')
+            self.log_text.delete("1.0", f"{line_count - MAX_LOG_LINES}.0")
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
 
@@ -929,21 +957,23 @@ https://github.com/trumank/repak
         self.progress_bar.stop()
         self.progress_frame.pack_forget()
 
-    def run_repak(self, args: List[str], callback: Optional[Callable[[bool], None]] = None) -> None:
+    def run_repak(
+        self, args: List[str], callback: Optional[Callable[[bool], None]] = None
+    ) -> None:
         """Run repak command in a separate thread with cancellation support"""
-        # Reset cancellation flag
         self.cancel_requested = False
 
         # Validate AES key if provided
         aes_key = self.aes_key_var.get().strip()
         if aes_key and not validate_aes_key(aes_key):
-            self.log("⚠️ Warning: AES key format may be invalid (expected 64 hex chars or base64)")
+            self.log(
+                "⚠️ Warning: AES key format may be invalid (expected 64 hex chars or base64)"
+            )
             logging.warning("AES key format validation failed")
 
         def _run():
             cmd = [str(self.repak_path)] + args
 
-            # Add AES key if provided
             if aes_key:
                 cmd.extend(["--aes-key", aes_key])
 
@@ -954,7 +984,6 @@ https://github.com/trumank/repak
 
             process = None
             try:
-                # Use CREATE_NO_WINDOW on Windows to hide console
                 creationflags = 0
                 if IS_WINDOWS:
                     creationflags = subprocess.CREATE_NO_WINDOW
@@ -963,27 +992,26 @@ https://github.com/trumank/repak
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    encoding='utf-8',
-                    errors='replace',
+                    encoding="utf-8",
+                    errors="replace",
                     cwd=self.script_dir,
-                    creationflags=creationflags
+                    creationflags=creationflags,
                 )
 
-                # Track the current process for cancellation (thread-safe)
                 with self._lock:
                     self.current_process = process
 
-                # Read output if stdout is available
                 if process.stdout:
-                    for line in iter(process.stdout.readline, ''):
-                        # Check for cancellation
+                    for line in iter(process.stdout.readline, ""):
                         if self.cancel_requested:
                             process.terminate()
                             try:
                                 process.wait(timeout=5)
                             except subprocess.TimeoutExpired:
                                 process.kill()
-                            self.root.after(0, self.log, "\n⚠️ Operation cancelled by user")
+                            self.root.after(
+                                0, self.log, "\n⚠️ Operation cancelled by user"
+                            )
                             self.root.after(0, self.hide_progress)
                             if callback:
                                 self.root.after(0, callback, False)
@@ -991,15 +1019,17 @@ https://github.com/trumank/repak
 
                         self.root.after(0, self.log, line.rstrip())
 
-                    # Explicitly close stdout
                     process.stdout.close()
 
-                # Wait for process with timeout
                 try:
                     process.wait(timeout=SUBPROCESS_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    self.root.after(0, self.log, f"\n✗ Process timed out after {SUBPROCESS_TIMEOUT}s")
+                    self.root.after(
+                        0,
+                        self.log,
+                        f"\n✗ Process timed out after {SUBPROCESS_TIMEOUT}s",
+                    )
                     self.root.after(0, self.hide_progress)
                     logging.error(f"Process timed out after {SUBPROCESS_TIMEOUT}s")
                     if callback:
@@ -1013,14 +1043,20 @@ https://github.com/trumank/repak
                     if callback:
                         self.root.after(0, callback, True)
                 else:
-                    self.root.after(0, self.log, f"\n✗ Failed with exit code {process.returncode}")
+                    self.root.after(
+                        0, self.log, f"\n✗ Failed with exit code {process.returncode}"
+                    )
                     self.root.after(0, self.hide_progress)
                     logging.error(f"Command failed with exit code {process.returncode}")
                     if callback:
                         self.root.after(0, callback, False)
 
             except FileNotFoundError:
-                self.root.after(0, self.log, f"\n✗ Error: repak binary not found at {self.repak_path}")
+                self.root.after(
+                    0,
+                    self.log,
+                    f"\n✗ Error: repak binary not found at {self.repak_path}",
+                )
                 self.root.after(0, self.hide_progress)
                 logging.error(f"repak binary not found: {self.repak_path}")
                 if callback:
@@ -1046,7 +1082,6 @@ https://github.com/trumank/repak
             finally:
                 with self._lock:
                     self.current_process = None
-                # Ensure process is cleaned up
                 if process is not None:
                     try:
                         if process.stdout and not process.stdout.closed:
@@ -1054,7 +1089,9 @@ https://github.com/trumank/repak
                         if process.poll() is None:
                             process.terminate()
                             try:
-                                process.wait(timeout=5)  # Wait for process to exit, prevent zombie
+                                process.wait(
+                                    timeout=5
+                                )  # Wait for process to exit, prevent zombie
                             except subprocess.TimeoutExpired:
                                 process.kill()  # Force kill if terminate didn't work
                                 process.wait()
@@ -1065,13 +1102,6 @@ https://github.com/trumank/repak
         self.operation_thread = thread
         thread.start()
 
-    def _is_operation_running(self) -> bool:
-        """Check if an operation is currently running"""
-        with self._lock:
-            return self._operation_in_progress or self.current_process is not None or (
-                self.operation_thread is not None and self.operation_thread.is_alive()
-            )
-
     def _try_start_operation(self) -> bool:
         """
         Atomically check if an operation can be started and mark it as started.
@@ -1079,8 +1109,13 @@ https://github.com/trumank/repak
         This prevents race conditions between checking and starting operations.
         """
         with self._lock:
-            if self._operation_in_progress or self.current_process is not None or (
-                self.operation_thread is not None and self.operation_thread.is_alive()
+            if (
+                self._operation_in_progress
+                or self.current_process is not None
+                or (
+                    self.operation_thread is not None
+                    and self.operation_thread.is_alive()
+                )
             ):
                 return False
             self._operation_in_progress = True
@@ -1092,9 +1127,11 @@ https://github.com/trumank/repak
             self._operation_in_progress = False
 
     def do_unpack(self) -> None:
-        # Atomically check and start operation to prevent race conditions
         if not self._try_start_operation():
-            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            messagebox.showwarning(
+                "Warning",
+                "An operation is already in progress. Please wait for it to complete.",
+            )
             return
 
         pak_file = self.unpack_pak_var.get().strip()
@@ -1104,38 +1141,36 @@ https://github.com/trumank/repak
             messagebox.showwarning("Warning", "Please select a pak file to unpack.")
             return
 
-        # Validate path
         validated_path = self._validate_path(pak_file, must_exist=True)
         if not validated_path:
             self._end_operation()
-            messagebox.showerror("Error", f"Invalid or non-existent pak file:\n{pak_file}")
+            messagebox.showerror(
+                "Error", f"Invalid or non-existent pak file:\n{pak_file}"
+            )
             return
 
-        # Ensure it's a .pak file
-        if validated_path.suffix.lower() != '.pak':
+        if validated_path.suffix.lower() != ".pak":
             self._end_operation()
             messagebox.showwarning("Warning", "Selected file is not a .pak file.")
             return
 
-        # Add to recent files
         self._add_to_recent_files(str(validated_path))
 
-        # Create subfolder based on pak name
         pak_name = validated_path.stem
         output_dir = self.unpack_dir / pak_name
 
         def on_complete(success: bool) -> None:
-            self._end_operation()  # Mark operation as finished
+            self._end_operation()
             if success:
                 messagebox.showinfo(
                     "Unpack Complete",
-                    f"Successfully unpacked {pak_name}.pak\n\nOutput: {output_dir}"
+                    f"Successfully unpacked {pak_name}.pak\n\nOutput: {output_dir}",
                 )
                 logging.info(f"Successfully unpacked: {validated_path}")
             else:
                 messagebox.showerror(
                     "Unpack Failed",
-                    f"Failed to unpack {pak_name}.pak\n\nCheck the log for details."
+                    f"Failed to unpack {pak_name}.pak\n\nCheck the log for details.",
                 )
                 logging.error(f"Failed to unpack: {validated_path}")
 
@@ -1144,9 +1179,11 @@ https://github.com/trumank/repak
         self.run_repak(args, callback=on_complete)
 
     def do_pack(self):
-        # Atomically check and start operation to prevent race conditions
         if not self._try_start_operation():
-            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            messagebox.showwarning(
+                "Warning",
+                "An operation is already in progress. Please wait for it to complete.",
+            )
             return
 
         source_dir = self.pack_source_var.get().strip()
@@ -1154,14 +1191,17 @@ https://github.com/trumank/repak
 
         if not source_dir:
             self._end_operation()
-            messagebox.showwarning("Warning", "Please select a source directory to pack.")
+            messagebox.showwarning(
+                "Warning", "Please select a source directory to pack."
+            )
             return
 
-        # Validate source directory
         validated_dir = self._validate_path(source_dir, must_exist=True)
         if not validated_dir or not validated_dir.is_dir():
             self._end_operation()
-            messagebox.showerror("Error", f"Invalid or non-existent source directory:\n{source_dir}")
+            messagebox.showerror(
+                "Error", f"Invalid or non-existent source directory:\n{source_dir}"
+            )
             return
 
         if not pak_name:
@@ -1169,32 +1209,33 @@ https://github.com/trumank/repak
             messagebox.showwarning("Warning", "Please specify a pak file name.")
             return
 
-        # Sanitize pak name to prevent path traversal
-        pak_name = Path(pak_name).name  # Extract just the filename, removing any path components
+        pak_name = Path(
+            pak_name
+        ).name  # Extract just the filename, removing any path components
 
-        # Validate pak name is not empty after sanitization
         if not pak_name or pak_name == ".pak":
             self._end_operation()
-            messagebox.showwarning("Warning", "Invalid pak file name. Please enter a valid name.")
+            messagebox.showwarning(
+                "Warning", "Invalid pak file name. Please enter a valid name."
+            )
             return
 
-        # Ensure .pak extension
         if not pak_name.endswith(".pak"):
             pak_name += ".pak"
 
         output_pak = self.pack_dir / pak_name
 
         def on_complete(success):
-            self._end_operation()  # Mark operation as finished
+            self._end_operation()
             if success:
                 messagebox.showinfo(
                     "Pack Complete",
-                    f"Successfully packed {pak_name}\n\nOutput: {output_pak}"
+                    f"Successfully packed {pak_name}\n\nOutput: {output_pak}",
                 )
             else:
                 messagebox.showerror(
                     "Pack Failed",
-                    f"Failed to pack {pak_name}\n\nCheck the log for details."
+                    f"Failed to pack {pak_name}\n\nCheck the log for details.",
                 )
 
         self.show_progress("Packing...")
@@ -1202,9 +1243,11 @@ https://github.com/trumank/repak
         self.run_repak(args, callback=on_complete)
 
     def do_info(self):
-        # Atomically check and start operation to prevent race conditions
         if not self._try_start_operation():
-            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            messagebox.showwarning(
+                "Warning",
+                "An operation is already in progress. Please wait for it to complete.",
+            )
             return
 
         pak_file = self.info_pak_var.get().strip()
@@ -1214,23 +1257,26 @@ https://github.com/trumank/repak
             messagebox.showwarning("Warning", "Please select a pak file.")
             return
 
-        # Validate path
         validated_path = self._validate_path(pak_file, must_exist=True)
         if not validated_path:
             self._end_operation()
-            messagebox.showerror("Error", f"Invalid or non-existent pak file:\n{pak_file}")
+            messagebox.showerror(
+                "Error", f"Invalid or non-existent pak file:\n{pak_file}"
+            )
             return
 
         def on_complete(success):
-            self._end_operation()  # Mark operation as finished
+            self._end_operation()
 
         self.show_progress("Getting info...")
         self.run_repak(["info", str(validated_path)], callback=on_complete)
 
     def do_list(self):
-        # Atomically check and start operation to prevent race conditions
         if not self._try_start_operation():
-            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            messagebox.showwarning(
+                "Warning",
+                "An operation is already in progress. Please wait for it to complete.",
+            )
             return
 
         pak_file = self.info_pak_var.get().strip()
@@ -1240,15 +1286,16 @@ https://github.com/trumank/repak
             messagebox.showwarning("Warning", "Please select a pak file.")
             return
 
-        # Validate path
         validated_path = self._validate_path(pak_file, must_exist=True)
         if not validated_path:
             self._end_operation()
-            messagebox.showerror("Error", f"Invalid or non-existent pak file:\n{pak_file}")
+            messagebox.showerror(
+                "Error", f"Invalid or non-existent pak file:\n{pak_file}"
+            )
             return
 
         def on_complete(success):
-            self._end_operation()  # Mark operation as finished
+            self._end_operation()
 
         self.show_progress("Listing contents...")
         self.run_repak(["list", str(validated_path)], callback=on_complete)
@@ -1256,7 +1303,10 @@ https://github.com/trumank/repak
     def do_batch_unpack(self):
         """Unpack all files in the batch list sequentially with cancellation support"""
         if not self._try_start_operation():
-            messagebox.showwarning("Warning", "An operation is already in progress. Please wait for it to complete.")
+            messagebox.showwarning(
+                "Warning",
+                "An operation is already in progress. Please wait for it to complete.",
+            )
             return
 
         if not self.batch_pak_files:
@@ -1264,22 +1314,23 @@ https://github.com/trumank/repak
             messagebox.showwarning("Warning", "Please add pak files to unpack.")
             return
 
-        # Validate all files first
         validated_files = []
         invalid = []
 
         for pak_file in self.batch_pak_files:
             validated = self._validate_path(pak_file, must_exist=True)
-            if validated and validated.suffix.lower() == '.pak':
+            if validated and validated.suffix.lower() == ".pak":
                 validated_files.append(validated)
             else:
                 invalid.append(pak_file)
 
         if invalid:
             self._end_operation()
-            messagebox.showerror("Error",
+            messagebox.showerror(
+                "Error",
                 f"Some files are invalid or not found:\n{chr(10).join(invalid[:5])}"
-                + (f"\n... and {len(invalid)-5} more" if len(invalid) > 5 else ""))
+                + (f"\n... and {len(invalid) - 5} more" if len(invalid) > 5 else ""),
+            )
             return
 
         if not validated_files:
@@ -1287,10 +1338,8 @@ https://github.com/trumank/repak
             messagebox.showwarning("Warning", "No valid pak files to unpack.")
             return
 
-        # Reset cancellation flag
         self.cancel_requested = False
 
-        # Get AES key once before starting
         aes_key = self.aes_key_var.get().strip()
         if aes_key and not validate_aes_key(aes_key):
             self.log("⚠️ Warning: AES key format may be invalid")
@@ -1299,7 +1348,6 @@ https://github.com/trumank/repak
         self.log("=" * 50)
         self.show_progress("Starting batch unpack...")
 
-        # Run batch unpack in a thread
         def _batch_run():
             try:
                 total = len(validated_files)
@@ -1307,25 +1355,42 @@ https://github.com/trumank/repak
                 fail_count = 0
                 skipped_count = 0
 
-                # Use CREATE_NO_WINDOW on Windows
                 creationflags = 0
                 if IS_WINDOWS:
                     creationflags = subprocess.CREATE_NO_WINDOW
 
                 for i, pak_file in enumerate(validated_files, 1):
-                    # Check for cancellation before starting each file
                     if self.cancel_requested:
                         skipped_count = total - i + 1
-                        self.root.after(0, self.log, f"\n⚠️ Batch cancelled. Skipped {skipped_count} file(s).")
+                        self.root.after(
+                            0,
+                            self.log,
+                            f"\n⚠️ Batch cancelled. Skipped {skipped_count} file(s).",
+                        )
                         break
 
                     pak_name = pak_file.stem
                     output_dir = self.unpack_dir / pak_name
 
-                    self.root.after(0, self.log, f"\n[{i}/{total}] Unpacking: {pak_name}")
-                    self.root.after(0, lambda pn=pak_name, idx=i, tot=total: self.progress_label.config(text=f"Unpacking {idx}/{tot}: {pn}"))
+                    self.root.after(
+                        0, self.log, f"\n[{i}/{total}] Unpacking: {pak_name}"
+                    )
+                    self.root.after(
+                        0,
+                        lambda pn=pak_name,
+                        idx=i,
+                        tot=total: self.progress_label.config(
+                            text=f"Unpacking {idx}/{tot}: {pn}"
+                        ),
+                    )
 
-                    cmd = [str(self.repak_path), "unpack", str(pak_file), "--output", str(output_dir)]
+                    cmd = [
+                        str(self.repak_path),
+                        "unpack",
+                        str(pak_file),
+                        "--output",
+                        str(output_dir),
+                    ]
 
                     if aes_key:
                         cmd.extend(["--aes-key", aes_key])
@@ -1336,18 +1401,17 @@ https://github.com/trumank/repak
                             cmd,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,
-                            encoding='utf-8',
-                            errors='replace',
+                            encoding="utf-8",
+                            errors="replace",
                             cwd=self.script_dir,
-                            creationflags=creationflags
+                            creationflags=creationflags,
                         )
 
                         with self._lock:
                             self.current_process = process
 
                         if process.stdout:
-                            for line in iter(process.stdout.readline, ''):
-                                # Check for cancellation during output reading
+                            for line in iter(process.stdout.readline, ""):
                                 if self.cancel_requested:
                                     process.terminate()
                                     try:
@@ -1355,13 +1419,16 @@ https://github.com/trumank/repak
                                     except subprocess.TimeoutExpired:
                                         process.kill()
                                     skipped_count = total - i
-                                    self.root.after(0, self.log, f"\n⚠️ Cancelled during {pak_name}. Skipped {skipped_count} remaining file(s).")
+                                    self.root.after(
+                                        0,
+                                        self.log,
+                                        f"\n⚠️ Cancelled during {pak_name}. Skipped {skipped_count} remaining file(s).",
+                                    )
                                     break
                                 self.root.after(0, self.log, line.rstrip())
 
                             process.stdout.close()
 
-                        # Break out of main loop if cancelled
                         if self.cancel_requested:
                             break
 
@@ -1371,7 +1438,11 @@ https://github.com/trumank/repak
                             self.root.after(0, self.log, f"  -> Success: {output_dir}")
                             success_count += 1
                         else:
-                            self.root.after(0, self.log, f"  -> Failed with exit code {process.returncode}")
+                            self.root.after(
+                                0,
+                                self.log,
+                                f"  -> Failed with exit code {process.returncode}",
+                            )
                             fail_count += 1
 
                     except subprocess.TimeoutExpired:
@@ -1380,7 +1451,9 @@ https://github.com/trumank/repak
                         self.root.after(0, self.log, "  -> Timeout: process killed")
                         fail_count += 1
                     except FileNotFoundError:
-                        self.root.after(0, self.log, "  -> Error: repak binary not found")
+                        self.root.after(
+                            0, self.log, "  -> Error: repak binary not found"
+                        )
                         fail_count += 1
                     except Exception as e:
                         self.root.after(0, self.log, f"  -> Error: {str(e)}")
@@ -1397,7 +1470,6 @@ https://github.com/trumank/repak
                             except Exception:
                                 pass  # Best effort process cleanup on cancellation
 
-                # Summary
                 self.root.after(0, self.log, "\n" + "=" * 50)
                 summary = f"Batch unpack complete: {success_count} succeeded, {fail_count} failed"
                 if skipped_count > 0:
@@ -1406,19 +1478,30 @@ https://github.com/trumank/repak
                 self.root.after(0, self.hide_progress)
                 logging.info(summary)
 
-                # Show completion dialog
                 if self.cancel_requested:
-                    self.root.after(0, lambda: messagebox.showinfo(
-                        "Batch Unpack Cancelled",
-                        f"Operation cancelled by user.\n\n{success_count} succeeded, {fail_count} failed, {skipped_count} skipped."))
+                    self.root.after(
+                        0,
+                        lambda: messagebox.showinfo(
+                            "Batch Unpack Cancelled",
+                            f"Operation cancelled by user.\n\n{success_count} succeeded, {fail_count} failed, {skipped_count} skipped.",
+                        ),
+                    )
                 elif fail_count == 0:
-                    self.root.after(0, lambda: messagebox.showinfo(
-                        "Batch Unpack Complete",
-                        f"Successfully unpacked {success_count} file(s).\n\nOutput: {self.unpack_dir}"))
+                    self.root.after(
+                        0,
+                        lambda: messagebox.showinfo(
+                            "Batch Unpack Complete",
+                            f"Successfully unpacked {success_count} file(s).\n\nOutput: {self.unpack_dir}",
+                        ),
+                    )
                 else:
-                    self.root.after(0, lambda: messagebox.showwarning(
-                        "Batch Unpack Complete",
-                        f"Completed with errors.\n\n{success_count} succeeded, {fail_count} failed.\n\nCheck the log for details."))
+                    self.root.after(
+                        0,
+                        lambda: messagebox.showwarning(
+                            "Batch Unpack Complete",
+                            f"Completed with errors.\n\n{success_count} succeeded, {fail_count} failed.\n\nCheck the log for details.",
+                        ),
+                    )
             finally:
                 self._end_operation()
 
@@ -1430,27 +1513,25 @@ https://github.com/trumank/repak
     def _version_newer(self, latest: str, current: str) -> bool:
         """Compare version strings to check if latest is newer than current."""
         try:
-            latest_parts = tuple(map(int, latest.split('.')))
-            current_parts = tuple(map(int, current.split('.')))
+            latest_parts = tuple(map(int, latest.split(".")))
+            current_parts = tuple(map(int, current.split(".")))
             return latest_parts > current_parts
         except (ValueError, AttributeError):
             return False
 
     def _check_for_updates_clicked(self) -> None:
         """Handle Check for Updates menu click."""
-        threading.Thread(target=self._check_for_updates, args=(False,), daemon=True).start()
+        threading.Thread(
+            target=self._check_for_updates, args=(False,), daemon=True
+        ).start()
 
     def _toggle_auto_check_updates(self) -> None:
         """Toggle automatic update checking on startup."""
-        self.config['auto_check_updates'] = self.auto_check_var.get()
+        self.config["auto_check_updates"] = self.auto_check_var.get()
         self._save_config()
 
     def _check_for_updates(self, silent: bool = True) -> None:
-        """Check GitHub for new version.
-
-        Args:
-            silent: If True, don't show dialog when up-to-date or on error
-        """
+        """Check GitHub for new version. When silent, only shows dialog if update is available."""
         import urllib.request
         import urllib.error
 
@@ -1458,37 +1539,47 @@ https://github.com/trumank/repak
             logging.info("Checking for updates...")
 
             request = urllib.request.Request(
-                GITHUB_API_LATEST,
-                headers={'User-Agent': f'RepakGUI/{__version__}'}
+                GITHUB_API_LATEST, headers={"User-Agent": f"RepakGUI/{__version__}"}
             )
             with urllib.request.urlopen(request, timeout=10) as response:
                 data = json.loads(response.read().decode())
 
-            latest_version = data.get('tag_name', '').lstrip('v')
+            latest_version = data.get("tag_name", "").lstrip("v")
 
             if not latest_version:
                 raise ValueError("No version tag found in release")
 
-            logging.info(f"Current version: {__version__}, Latest version: {latest_version}")
+            logging.info(
+                f"Current version: {__version__}, Latest version: {latest_version}"
+            )
 
             if self._version_newer(latest_version, __version__):
-                self.root.after(0, lambda: self._show_update_dialog(latest_version, data))
+                self.root.after(
+                    0, lambda: self._show_update_dialog(latest_version, data)
+                )
             elif not silent:
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "Up to Date",
-                    f"You are running the latest version (v{__version__})."
-                ))
+                self.root.after(
+                    0,
+                    lambda: messagebox.showinfo(
+                        "Up to Date",
+                        f"You are running the latest version (v{__version__}).",
+                    ),
+                )
 
         except urllib.error.URLError as e:
             logging.error(f"Network error checking for updates: {e}")
             if not silent:
                 msg = f"Failed to check for updates:\n{e}"
-                self.root.after(0, lambda m=msg: messagebox.showerror("Update Error", m))
+                self.root.after(
+                    0, lambda m=msg: messagebox.showerror("Update Error", m)
+                )
         except Exception as e:
             logging.error(f"Error checking for updates: {e}")
             if not silent:
                 msg = f"Failed to check for updates:\n{e}"
-                self.root.after(0, lambda m=msg: messagebox.showerror("Update Error", m))
+                self.root.after(
+                    0, lambda m=msg: messagebox.showerror("Update Error", m)
+                )
 
     def _show_update_dialog(self, latest_version: str, release_data: dict) -> None:
         """Show update available dialog with options."""
@@ -1507,16 +1598,25 @@ https://github.com/trumank/repak
 
         def update_now():
             dialog.destroy()
-            threading.Thread(target=self._apply_update, args=(release_data,), daemon=True).start()
+            threading.Thread(
+                target=self._apply_update, args=(release_data,), daemon=True
+            ).start()
 
         def open_releases():
             dialog.destroy()
             import webbrowser
+
             webbrowser.open(GITHUB_RELEASES_URL)
 
-        ttk.Button(btn_frame, text="Update Now", command=update_now).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Open Releases", command=open_releases).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Later", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Update Now", command=update_now).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(btn_frame, text="Open Releases", command=open_releases).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(btn_frame, text="Later", command=dialog.destroy).pack(
+            side=tk.LEFT, padx=5
+        )
 
         dialog.update_idletasks()
         x = (dialog.winfo_screenwidth() - dialog.winfo_width()) // 2
@@ -1526,24 +1626,73 @@ https://github.com/trumank/repak
     def _compute_git_blob_sha(self, content):
         """Compute git blob SHA1 (same as git hash-object)."""
         import hashlib
+
         header = f"blob {len(content)}\0".encode()
         return hashlib.sha1(header + content).hexdigest()
 
-    def _verify_file_against_github(self, tag_name, filename, content, headers):
-        """Verify content matches GitHub's git tree SHA for this release tag."""
+    def _get_expected_sha256(self, release_data, asset_name, headers):
+        """Fetch SHA256SUMS from release and return expected hash for asset_name."""
+        import re as _re
         import urllib.request
+
+        tag_name = release_data.get("tag_name", "")
+        if not hasattr(self, "_sha256sums_cache"):
+            self._sha256sums_cache = {}
+        if tag_name not in self._sha256sums_cache:
+            sha_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag_name}/SHA256SUMS"
+            try:
+                req = urllib.request.Request(sha_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    self._sha256sums_cache[tag_name] = response.read().decode("utf-8")
+            except Exception as e:
+                print(f"[update] Could not fetch SHA256SUMS: {e}")
+                return None
+        sha256sums = self._sha256sums_cache.get(tag_name, "")
+        for line in sha256sums.strip().splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == asset_name:
+                h = parts[0].lower()
+                if _re.fullmatch(r"[0-9a-f]{64}", h):
+                    return h
+                return None
+        return None
+
+    def _verify_file_against_github(
+        self, tag_name, filename, content, headers, release_data=None
+    ):
+        """Verify content via SHA-256 (preferred) and git blob SHA-1 (always)."""
+        import hashlib
+        import urllib.request
+
+        # SHA-1: git blob hash against GitHub Contents API (always runs)
         api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}?ref={tag_name}"
         request = urllib.request.Request(api_url, headers=headers)
         with urllib.request.urlopen(request, timeout=30) as response:
             file_info = json.loads(response.read().decode())
-        expected_sha = file_info.get('sha', '')
+        expected_sha = file_info.get("sha", "")
         actual_sha = self._compute_git_blob_sha(content)
         if actual_sha != expected_sha:
             raise RuntimeError(
-                f"Integrity check failed for {filename}!\n"
-                f"Expected SHA: {expected_sha[:16]}...\n"
-                f"Got SHA: {actual_sha[:16]}..."
+                f"SHA-1 integrity check failed for {filename}!\n"
+                f"Expected SHA-1: {expected_sha[:16]}...\n"
+                f"Got SHA-1: {actual_sha[:16]}..."
             )
+        logging.info(f"SHA-1 verified for {filename}")
+
+        # SHA-256: from release SHA256SUMS asset (when release_data available)
+        if release_data is not None:
+            expected_256 = self._get_expected_sha256(release_data, filename, headers)
+            if expected_256 is not None:
+                actual_256 = hashlib.sha256(content).hexdigest()
+                if actual_256 != expected_256:
+                    raise RuntimeError(
+                        f"SHA-256 integrity check failed for {filename}!\n"
+                        f"Expected SHA-256: {expected_256[:16]}...\n"
+                        f"Got SHA-256: {actual_256[:16]}..."
+                    )
+                logging.info(f"SHA-256 verified for {filename}")
+            else:
+                logging.info(f"SHA256SUMS not available for {filename}, SHA-1 only")
 
     def _apply_update(self, release_data: dict) -> None:
         """Download and apply update with git blob SHA integrity verification."""
@@ -1554,18 +1703,19 @@ https://github.com/trumank/repak
 
         tmp_path = None
         try:
-            tag_name = release_data.get('tag_name', 'main')
+            tag_name = release_data.get("tag_name", "main")
             download_url = f"{GITHUB_RAW_URL}/{tag_name}/repak_gui.py"
 
-            headers = {'User-Agent': f'RepakGUI/{__version__}'}
+            headers = {"User-Agent": f"RepakGUI/{__version__}"}
 
             logging.info(f"Downloading update from: {download_url}")
 
             request = urllib.request.Request(download_url, headers=headers)
 
             # Create temp file in same directory as script to ensure same-filesystem move
-            with tempfile.NamedTemporaryFile(mode='wb', suffix='.py', delete=False,
-                                             dir=str(self.script_dir)) as tmp_file:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".py", delete=False, dir=str(self.script_dir)
+            ) as tmp_file:
                 with urllib.request.urlopen(request, timeout=60) as response:
                     content = response.read()
                     tmp_file.write(content)
@@ -1573,13 +1723,14 @@ https://github.com/trumank/repak
                     os.fsync(tmp_file.fileno())  # Ensure data is written to disk
                 tmp_path = tmp_file.name
 
-            # Verify integrity using git blob SHA against GitHub Contents API
-            self._verify_file_against_github(tag_name, 'repak_gui.py', content, headers)
+            # Verify integrity: SHA-256 (from release) + SHA-1 (git blob)
+            self._verify_file_against_github(
+                tag_name, "repak_gui.py", content, headers, release_data=release_data
+            )
             logging.info("Integrity check passed")
 
-            # Integrity verified - apply update
             current_script = Path(__file__).resolve()
-            backup_path = current_script.with_suffix('.py.backup')
+            backup_path = current_script.with_suffix(".py.backup")
             shutil.copy2(current_script, backup_path)
             logging.info(f"Created backup at: {backup_path}")
 
@@ -1587,18 +1738,20 @@ https://github.com/trumank/repak
             tmp_path = None  # Move succeeded, no cleanup needed
             logging.info(f"Updated script at: {current_script}")
 
-            self.root.after(0, lambda: messagebox.showinfo(
-                "Update Complete",
-                "Update downloaded and verified successfully!\n\n"
-                "Please restart the application to apply the update."
-            ))
+            self.root.after(
+                0,
+                lambda: messagebox.showinfo(
+                    "Update Complete",
+                    "Update downloaded and verified successfully!\n\n"
+                    "Please restart the application to apply the update.",
+                ),
+            )
 
         except Exception as e:
             logging.error(f"Error applying update: {e}")
-            # Attempt to restore from backup if the original script was removed
             try:
                 current_script = Path(__file__).resolve()
-                backup_path = current_script.with_suffix('.py.backup')
+                backup_path = current_script.with_suffix(".py.backup")
                 if not current_script.exists() and backup_path.exists():
                     shutil.copy2(backup_path, current_script)
                     logging.info(f"Restored script from backup: {backup_path}")
@@ -1607,7 +1760,6 @@ https://github.com/trumank/repak
             msg = f"Failed to download update:\n{e}"
             self.root.after(0, lambda m=msg: messagebox.showerror("Update Failed", m))
         finally:
-            # Clean up temp file if it still exists
             if tmp_path is not None:
                 try:
                     Path(tmp_path).unlink()
@@ -1616,17 +1768,15 @@ https://github.com/trumank/repak
 
 
 def main():
-    # Setup logging first
     setup_logging()
 
     root = tk.Tk()
 
-    # Try to use a nicer theme if available
     try:
         style = ttk.Style()
         available_themes = style.theme_names()
-        if 'clam' in available_themes:
-            style.theme_use('clam')
+        if "clam" in available_themes:
+            style.theme_use("clam")
     except Exception:
         pass  # Continue with default theme if there's an error
 
