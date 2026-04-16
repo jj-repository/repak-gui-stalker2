@@ -114,6 +114,7 @@ class RepakGUI:
 
         self._lock = threading.Lock()
         self._operation_in_progress = False  # Flag for atomic operation start check
+        self._sha256sums_cache: Dict[str, str] = {}
 
         self.unpack_dir = self.script_dir / "unpackedfiles"
         self.pack_dir = self.script_dir / "packedfiles"
@@ -1510,12 +1511,17 @@ https://github.com/trumank/repak
         thread.start()
 
     # Update feature methods
-    def _version_newer(self, latest: str, current: str) -> bool:
-        """Compare version strings to check if latest is newer than current."""
+    @staticmethod
+    def _version_newer(latest: str, current: str) -> bool:
+        """Compare X.YY version strings. Pads with zeros so '1.5' < '1.05' works correctly."""
         try:
             latest_parts = tuple(map(int, latest.split(".")))
             current_parts = tuple(map(int, current.split(".")))
-            return latest_parts > current_parts
+            # Pad shorter tuple with zeros for consistent comparison
+            max_len = max(len(latest_parts), len(current_parts))
+            latest_padded = latest_parts + (0,) * (max_len - len(latest_parts))
+            current_padded = current_parts + (0,) * (max_len - len(current_parts))
+            return latest_padded > current_padded
         except (ValueError, AttributeError):
             return False
 
@@ -1630,14 +1636,13 @@ https://github.com/trumank/repak
         header = f"blob {len(content)}\0".encode()
         return hashlib.sha1(header + content).hexdigest()
 
-    def _get_expected_sha256(self, release_data, asset_name, headers):
+    def _get_expected_sha256(
+        self, release_data: dict, asset_name: str, headers: Dict[str, str]
+    ) -> Optional[str]:
         """Fetch SHA256SUMS from release and return expected hash for asset_name."""
-        import re as _re
         import urllib.request
 
         tag_name = release_data.get("tag_name", "")
-        if not hasattr(self, "_sha256sums_cache"):
-            self._sha256sums_cache = {}
         if tag_name not in self._sha256sums_cache:
             sha_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag_name}/SHA256SUMS"
             try:
@@ -1645,26 +1650,47 @@ https://github.com/trumank/repak
                 with urllib.request.urlopen(req, timeout=30) as response:
                     self._sha256sums_cache[tag_name] = response.read().decode("utf-8")
             except Exception as e:
-                print(f"[update] Could not fetch SHA256SUMS: {e}")
+                logging.warning(f"Could not fetch SHA256SUMS: {e}")
                 return None
         sha256sums = self._sha256sums_cache.get(tag_name, "")
         for line in sha256sums.strip().splitlines():
             parts = line.split()
             if len(parts) >= 2 and parts[1] == asset_name:
                 h = parts[0].lower()
-                if _re.fullmatch(r"[0-9a-f]{64}", h):
+                if re.fullmatch(r"[0-9a-f]{64}", h):
                     return h
                 return None
         return None
 
     def _verify_file_against_github(
-        self, tag_name, filename, content, headers, release_data=None
-    ):
-        """Verify content via SHA-256 (preferred) and git blob SHA-1 (always)."""
+        self,
+        tag_name: str,
+        filename: str,
+        content: bytes,
+        headers: Dict[str, str],
+        release_data: Optional[dict] = None,
+    ) -> None:
+        """Verify downloaded content integrity. SHA-256 is primary, git blob SHA-1 is fallback."""
         import hashlib
         import urllib.request
 
-        # SHA-1: git blob hash against GitHub Contents API (always runs)
+        sha256_verified = False
+
+        # SHA-256: primary verification from release SHA256SUMS asset
+        if release_data is not None:
+            expected_256 = self._get_expected_sha256(release_data, filename, headers)
+            if expected_256 is not None:
+                actual_256 = hashlib.sha256(content).hexdigest()
+                if actual_256 != expected_256:
+                    raise RuntimeError(
+                        f"SHA-256 integrity check failed for {filename}!\n"
+                        f"Expected: {expected_256[:16]}...\n"
+                        f"Got: {actual_256[:16]}..."
+                    )
+                logging.info(f"SHA-256 verified for {filename}")
+                sha256_verified = True
+
+        # SHA-1: git blob hash against GitHub Contents API (fallback, or additional check)
         api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}?ref={tag_name}"
         request = urllib.request.Request(api_url, headers=headers)
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -1674,25 +1700,15 @@ https://github.com/trumank/repak
         if actual_sha != expected_sha:
             raise RuntimeError(
                 f"SHA-1 integrity check failed for {filename}!\n"
-                f"Expected SHA-1: {expected_sha[:16]}...\n"
-                f"Got SHA-1: {actual_sha[:16]}..."
+                f"Expected: {expected_sha[:16]}...\n"
+                f"Got: {actual_sha[:16]}..."
             )
         logging.info(f"SHA-1 verified for {filename}")
 
-        # SHA-256: from release SHA256SUMS asset (when release_data available)
-        if release_data is not None:
-            expected_256 = self._get_expected_sha256(release_data, filename, headers)
-            if expected_256 is not None:
-                actual_256 = hashlib.sha256(content).hexdigest()
-                if actual_256 != expected_256:
-                    raise RuntimeError(
-                        f"SHA-256 integrity check failed for {filename}!\n"
-                        f"Expected SHA-256: {expected_256[:16]}...\n"
-                        f"Got SHA-256: {actual_256[:16]}..."
-                    )
-                logging.info(f"SHA-256 verified for {filename}")
-            else:
-                logging.info(f"SHA256SUMS not available for {filename}, SHA-1 only")
+        if not sha256_verified:
+            logging.info(
+                f"SHA256SUMS not available for {filename}, verified by SHA-1 only"
+            )
 
     def _apply_update(self, release_data: dict) -> None:
         """Download and apply update with git blob SHA integrity verification."""

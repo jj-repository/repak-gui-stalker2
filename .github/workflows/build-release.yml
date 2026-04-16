@@ -28,7 +28,7 @@ jobs:
 
     - name: Verify checksum file is current
       run: |
-        sha256sum -c repak_gui.py.sha256
+        sha256sum -c checksums.sha256
 
     - name: Build Linux executable
       run: |

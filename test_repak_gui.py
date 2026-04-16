@@ -7,12 +7,7 @@ Run with coverage: pytest test_repak_gui.py -v --cov=repak_gui --cov=find_confli
 """
 
 import pytest
-import tempfile
 import json
-import os
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import tkinter as tk
 
 # Import the modules to test
 import repak_gui
@@ -63,6 +58,7 @@ class TestRedactAESKey:
 
     def test_redacts_aes_key(self):
         """AES key value should be redacted in logs"""
+
         # Test the _redact_aes_key method directly with a simple class
         class MockGUI:
             pass
@@ -80,6 +76,7 @@ class TestRedactAESKey:
 
     def test_no_key_no_redaction(self):
         """Command without AES key should not be modified"""
+
         class MockGUI:
             pass
 
@@ -113,6 +110,7 @@ class TestPathValidation:
 
     def test_validate_nonexistent_path(self):
         """Non-existent path should return None when must_exist=True"""
+
         class MockGUI:
             pass
 
@@ -124,6 +122,7 @@ class TestPathValidation:
 
     def test_validate_path_not_required_to_exist(self, tmp_path):
         """Path not required to exist should validate"""
+
         class MockGUI:
             pass
 
@@ -144,22 +143,22 @@ class TestConfigPersistence:
 
         # Write test config
         test_config = {
-            'window_geometry': '800x600',
-            'recent_files': ['/path/to/file1.pak', '/path/to/file2.pak'],
-            'last_unpack_dir': '/some/dir',
-            'last_pack_dir': '/another/dir'
+            "window_geometry": "800x600",
+            "recent_files": ["/path/to/file1.pak", "/path/to/file2.pak"],
+            "last_unpack_dir": "/some/dir",
+            "last_pack_dir": "/another/dir",
         }
 
-        with open(config_file, 'w', encoding='utf-8') as f:
+        with open(config_file, "w", encoding="utf-8") as f:
             json.dump(test_config, f)
 
         # Read it back
-        with open(config_file, 'r', encoding='utf-8') as f:
+        with open(config_file, "r", encoding="utf-8") as f:
             loaded_config = json.load(f)
 
-        assert loaded_config['window_geometry'] == '800x600'
-        assert len(loaded_config['recent_files']) == 2
-        assert '/path/to/file1.pak' in loaded_config['recent_files']
+        assert loaded_config["window_geometry"] == "800x600"
+        assert len(loaded_config["recent_files"]) == 2
+        assert "/path/to/file1.pak" in loaded_config["recent_files"]
 
     def test_legacy_aes_key_removed(self, tmp_path):
         """Legacy AES key should be removed from config for security"""
@@ -167,22 +166,22 @@ class TestConfigPersistence:
 
         # Write config with legacy AES key
         old_config = {
-            'window_geometry': '800x600',
-            'recent_files': [],
-            'last_aes_key': 'should_be_removed'
+            "window_geometry": "800x600",
+            "recent_files": [],
+            "last_aes_key": "should_be_removed",
         }
 
-        with open(config_file, 'w', encoding='utf-8') as f:
+        with open(config_file, "w", encoding="utf-8") as f:
             json.dump(old_config, f)
 
         # Simulate loading (manually test the logic)
-        with open(config_file, 'r', encoding='utf-8') as f:
+        with open(config_file, "r", encoding="utf-8") as f:
             loaded = json.load(f)
 
-        if 'last_aes_key' in loaded:
-            del loaded['last_aes_key']
+        if "last_aes_key" in loaded:
+            del loaded["last_aes_key"]
 
-        assert 'last_aes_key' not in loaded
+        assert "last_aes_key" not in loaded
 
 
 class TestRecentFilesLimit:
@@ -190,7 +189,7 @@ class TestRecentFilesLimit:
 
     def test_max_recent_files_constant(self):
         """MAX_RECENT_FILES should be defined and reasonable"""
-        assert hasattr(repak_gui, 'MAX_RECENT_FILES')
+        assert hasattr(repak_gui, "MAX_RECENT_FILES")
         assert repak_gui.MAX_RECENT_FILES > 0
         assert repak_gui.MAX_RECENT_FILES <= 100  # Sanity check
 
@@ -208,7 +207,7 @@ class TestFindConflicts:
         # SHA-256 hash is 64 characters (hex)
         assert file_hash is not None
         assert len(file_hash) == 64
-        assert all(c in '0123456789abcdef' for c in file_hash)
+        assert all(c in "0123456789abcdef" for c in file_hash)
 
     def test_file_hash_consistent(self, tmp_path):
         """Same content should produce same hash"""
@@ -244,7 +243,7 @@ class TestFindConflicts:
 
     def test_find_cfg_files_empty_dir(self, tmp_path, monkeypatch):
         """Empty directory should return empty dict"""
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", tmp_path)
 
         result = find_conflicts.find_cfg_files()
 
@@ -252,7 +251,7 @@ class TestFindConflicts:
 
     def test_find_cfg_files_with_files(self, tmp_path, monkeypatch):
         """Should find .cfg files in subdirectories"""
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", tmp_path)
 
         # Create mod structure
         mod1_dir = tmp_path / "mod1" / "config"
@@ -270,7 +269,7 @@ class TestFindConflicts:
 
     def test_find_conflicts_no_duplicates(self, tmp_path, monkeypatch):
         """Single file should not be a conflict"""
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", tmp_path)
 
         mod1_dir = tmp_path / "mod1" / "config"
         mod1_dir.mkdir(parents=True)
@@ -283,7 +282,7 @@ class TestFindConflicts:
 
     def test_find_conflicts_identical_files(self, tmp_path, monkeypatch):
         """Identical files should not be reported as conflicts"""
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", tmp_path)
 
         mod1_dir = tmp_path / "mod1"
         mod1_dir.mkdir()
@@ -300,7 +299,7 @@ class TestFindConflicts:
 
     def test_find_conflicts_different_files(self, tmp_path, monkeypatch):
         """Different files with same name should be conflicts"""
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", tmp_path)
 
         mod1_dir = tmp_path / "mod1"
         mod1_dir.mkdir()
@@ -322,14 +321,14 @@ class TestVersionDefined:
 
     def test_version_string_exists(self):
         """Version should be defined as a non-empty string"""
-        assert hasattr(repak_gui, '__version__')
+        assert hasattr(repak_gui, "__version__")
         assert isinstance(repak_gui.__version__, str)
         assert len(repak_gui.__version__) > 0
 
     def test_version_format(self):
         """Version should follow semantic versioning pattern"""
         version = repak_gui.__version__
-        parts = version.split('.')
+        parts = version.split(".")
         assert len(parts) >= 2  # At least major.minor
 
 
@@ -338,19 +337,19 @@ class TestConstants:
 
     def test_window_constants(self):
         """Window dimension constants should be defined"""
-        assert hasattr(repak_gui, 'WINDOW_WIDTH')
-        assert hasattr(repak_gui, 'WINDOW_HEIGHT')
+        assert hasattr(repak_gui, "WINDOW_WIDTH")
+        assert hasattr(repak_gui, "WINDOW_HEIGHT")
         assert repak_gui.WINDOW_WIDTH > 0
         assert repak_gui.WINDOW_HEIGHT > 0
 
     def test_subprocess_timeout(self):
         """Subprocess timeout should be defined and reasonable"""
-        assert hasattr(repak_gui, 'SUBPROCESS_TIMEOUT')
+        assert hasattr(repak_gui, "SUBPROCESS_TIMEOUT")
         assert repak_gui.SUBPROCESS_TIMEOUT >= 60  # At least 1 minute
 
     def test_platform_detection(self):
         """IS_WINDOWS constant should be defined"""
-        assert hasattr(repak_gui, 'IS_WINDOWS')
+        assert hasattr(repak_gui, "IS_WINDOWS")
         assert isinstance(repak_gui.IS_WINDOWS, bool)
 
 
@@ -360,8 +359,8 @@ class TestCopyConflictsToFolders:
     def test_copy_conflicts_creates_directory(self, tmp_path, monkeypatch):
         """Should create conflicts directory"""
         conflicts_dir = tmp_path / "conflicts"
-        monkeypatch.setattr(find_conflicts, 'CONFLICTS_DIR', conflicts_dir)
-        monkeypatch.setattr(find_conflicts, 'SCRIPT_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "CONFLICTS_DIR", conflicts_dir)
+        monkeypatch.setattr(find_conflicts, "SCRIPT_DIR", tmp_path)
 
         # Create a simple conflict
         mod1_dir = tmp_path / "mod1"
@@ -371,10 +370,8 @@ class TestCopyConflictsToFolders:
 
         conflicts = {
             "test.cfg": {
-                "occurrences": [
-                    {"mod": "mod1", "path": test_file}
-                ],
-                "unique_versions": 1
+                "occurrences": [{"mod": "mod1", "path": test_file}],
+                "unique_versions": 1,
             }
         }
 
@@ -386,8 +383,8 @@ class TestCopyConflictsToFolders:
     def test_copy_conflicts_sanitizes_mod_name(self, tmp_path, monkeypatch):
         """Should sanitize mod names with special characters"""
         conflicts_dir = tmp_path / "conflicts"
-        monkeypatch.setattr(find_conflicts, 'CONFLICTS_DIR', conflicts_dir)
-        monkeypatch.setattr(find_conflicts, 'SCRIPT_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "CONFLICTS_DIR", conflicts_dir)
+        monkeypatch.setattr(find_conflicts, "SCRIPT_DIR", tmp_path)
 
         # Create file with problematic mod name
         mod_dir = tmp_path / "mod_with_slash"
@@ -397,10 +394,8 @@ class TestCopyConflictsToFolders:
 
         conflicts = {
             "test.cfg": {
-                "occurrences": [
-                    {"mod": "path/with/slashes", "path": test_file}
-                ],
-                "unique_versions": 1
+                "occurrences": [{"mod": "path/with/slashes", "path": test_file}],
+                "unique_versions": 1,
             }
         }
 
@@ -413,80 +408,51 @@ class TestCopyConflictsToFolders:
 
 
 class TestVersionComparison:
-    """Test suite for version comparison (_version_newer method)"""
+    """Test suite for version comparison (_version_newer staticmethod)"""
 
     def test_newer_major_version(self):
         """Newer major version should be detected"""
-        class MockGUI:
-            pass
-        mock_gui = MockGUI()
-        method = repak_gui.RepakGUI._version_newer.__get__(mock_gui, MockGUI)
-
-        assert method("2.0.0", "1.0.0") is True
-        assert method("10.0.0", "9.0.0") is True
+        assert repak_gui.RepakGUI._version_newer("2.0.0", "1.0.0") is True
+        assert repak_gui.RepakGUI._version_newer("10.0.0", "9.0.0") is True
 
     def test_newer_minor_version(self):
         """Newer minor version should be detected"""
-        class MockGUI:
-            pass
-        mock_gui = MockGUI()
-        method = repak_gui.RepakGUI._version_newer.__get__(mock_gui, MockGUI)
-
-        assert method("1.1.0", "1.0.0") is True
-        assert method("1.10.0", "1.9.0") is True
+        assert repak_gui.RepakGUI._version_newer("1.1.0", "1.0.0") is True
+        assert repak_gui.RepakGUI._version_newer("1.10.0", "1.9.0") is True
 
     def test_newer_patch_version(self):
         """Newer patch version should be detected"""
-        class MockGUI:
-            pass
-        mock_gui = MockGUI()
-        method = repak_gui.RepakGUI._version_newer.__get__(mock_gui, MockGUI)
-
-        assert method("1.0.1", "1.0.0") is True
-        assert method("1.0.10", "1.0.9") is True
+        assert repak_gui.RepakGUI._version_newer("1.0.1", "1.0.0") is True
+        assert repak_gui.RepakGUI._version_newer("1.0.10", "1.0.9") is True
 
     def test_same_version_not_newer(self):
         """Same version should not be considered newer"""
-        class MockGUI:
-            pass
-        mock_gui = MockGUI()
-        method = repak_gui.RepakGUI._version_newer.__get__(mock_gui, MockGUI)
-
-        assert method("1.0.0", "1.0.0") is False
-        assert method("2.5.3", "2.5.3") is False
+        assert repak_gui.RepakGUI._version_newer("1.0.0", "1.0.0") is False
+        assert repak_gui.RepakGUI._version_newer("2.5.3", "2.5.3") is False
 
     def test_older_version_not_newer(self):
         """Older version should not be considered newer"""
-        class MockGUI:
-            pass
-        mock_gui = MockGUI()
-        method = repak_gui.RepakGUI._version_newer.__get__(mock_gui, MockGUI)
-
-        assert method("1.0.0", "2.0.0") is False
-        assert method("1.0.0", "1.1.0") is False
-        assert method("1.0.0", "1.0.1") is False
+        assert repak_gui.RepakGUI._version_newer("1.0.0", "2.0.0") is False
+        assert repak_gui.RepakGUI._version_newer("1.0.0", "1.1.0") is False
+        assert repak_gui.RepakGUI._version_newer("1.0.0", "1.0.1") is False
 
     def test_invalid_version_returns_false(self):
         """Invalid version strings should return False"""
-        class MockGUI:
-            pass
-        mock_gui = MockGUI()
-        method = repak_gui.RepakGUI._version_newer.__get__(mock_gui, MockGUI)
-
-        assert method("invalid", "1.0.0") is False
-        assert method("1.0.0", "invalid") is False
-        assert method("", "1.0.0") is False
-        assert method("1.0.0", "") is False
+        assert repak_gui.RepakGUI._version_newer("invalid", "1.0.0") is False
+        assert repak_gui.RepakGUI._version_newer("1.0.0", "invalid") is False
+        assert repak_gui.RepakGUI._version_newer("", "1.0.0") is False
+        assert repak_gui.RepakGUI._version_newer("1.0.0", "") is False
 
     def test_version_with_two_parts(self):
         """Versions with only major.minor should work"""
-        class MockGUI:
-            pass
-        mock_gui = MockGUI()
-        method = repak_gui.RepakGUI._version_newer.__get__(mock_gui, MockGUI)
+        assert repak_gui.RepakGUI._version_newer("1.1", "1.0") is True
+        assert repak_gui.RepakGUI._version_newer("2.0", "1.9") is True
 
-        assert method("1.1", "1.0") is True
-        assert method("2.0", "1.9") is True
+    def test_mixed_part_count(self):
+        """Versions with different part counts should compare correctly"""
+        assert repak_gui.RepakGUI._version_newer("1.06", "1.05") is True
+        assert repak_gui.RepakGUI._version_newer("1.1.0", "1.1") is False
+        assert repak_gui.RepakGUI._version_newer("2.0", "1.99.99") is True
 
 
 class TestAESKeyEdgeCases:
@@ -545,8 +511,10 @@ class TestPathValidationEdgeCases:
 
     def test_path_with_null_byte_rejected(self):
         """Path containing null byte should be rejected"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._validate_path.__get__(mock_gui, MockGUI)
 
@@ -555,8 +523,10 @@ class TestPathValidationEdgeCases:
 
     def test_path_with_traversal_forward_slash(self):
         """Path with ../ traversal should be rejected"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._validate_path.__get__(mock_gui, MockGUI)
 
@@ -565,8 +535,10 @@ class TestPathValidationEdgeCases:
 
     def test_path_with_traversal_backslash(self):
         """Path with ..\\ traversal should be rejected"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._validate_path.__get__(mock_gui, MockGUI)
 
@@ -575,8 +547,10 @@ class TestPathValidationEdgeCases:
 
     def test_empty_path_rejected(self):
         """Empty path should be rejected"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._validate_path.__get__(mock_gui, MockGUI)
 
@@ -585,8 +559,10 @@ class TestPathValidationEdgeCases:
 
     def test_valid_absolute_path(self, tmp_path):
         """Valid absolute path should be accepted"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._validate_path.__get__(mock_gui, MockGUI)
 
@@ -599,8 +575,10 @@ class TestPathValidationEdgeCases:
 
     def test_valid_path_must_not_exist(self, tmp_path):
         """Path not required to exist should be accepted even if missing"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._validate_path.__get__(mock_gui, MockGUI)
 
@@ -696,7 +674,7 @@ class TestFindConflictsEdgeCases:
     def test_file_hash_binary_file(self, tmp_path):
         """Binary file should be hashable"""
         binary_file = tmp_path / "binary.cfg"
-        binary_file.write_bytes(b'\x00\x01\x02\x03\xff\xfe\xfd')
+        binary_file.write_bytes(b"\x00\x01\x02\x03\xff\xfe\xfd")
 
         file_hash = find_conflicts.get_file_hash(binary_file)
         assert file_hash is not None
@@ -706,7 +684,7 @@ class TestFindConflictsEdgeCases:
         """Large file should be hashable (tests chunked reading)"""
         large_file = tmp_path / "large.cfg"
         # Write a file larger than HASH_CHUNK_SIZE (8192 bytes)
-        large_file.write_bytes(b'x' * 20000)
+        large_file.write_bytes(b"x" * 20000)
 
         file_hash = find_conflicts.get_file_hash(large_file)
         assert file_hash is not None
@@ -720,19 +698,22 @@ class TestFindConflictsEdgeCases:
         file_hash = find_conflicts.get_file_hash(empty_file)
         assert file_hash is not None
         # SHA-256 of empty file is a known value
-        assert file_hash == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        assert (
+            file_hash
+            == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
 
     def test_find_cfg_files_nonexistent_unpack_dir(self, tmp_path, monkeypatch):
         """Nonexistent unpack directory should return empty dict"""
         nonexistent = tmp_path / "does_not_exist"
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', nonexistent)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", nonexistent)
 
         result = find_conflicts.find_cfg_files()
         assert len(result) == 0
 
     def test_find_cfg_files_nested_structure(self, tmp_path, monkeypatch):
         """Should find cfg files in deeply nested directories"""
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", tmp_path)
 
         # Create deeply nested structure
         nested_dir = tmp_path / "mod1" / "config" / "game" / "settings"
@@ -746,7 +727,7 @@ class TestFindConflictsEdgeCases:
 
     def test_find_conflicts_multiple_identical_files(self, tmp_path, monkeypatch):
         """Multiple identical files should not be reported as conflicts"""
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", tmp_path)
 
         # Create 5 mods with identical content
         for i in range(5):
@@ -761,7 +742,7 @@ class TestFindConflictsEdgeCases:
 
     def test_find_conflicts_three_different_versions(self, tmp_path, monkeypatch):
         """Three different versions of a file should show 3 unique versions"""
-        monkeypatch.setattr(find_conflicts, 'UNPACK_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "UNPACK_DIR", tmp_path)
 
         for i in range(3):
             mod_dir = tmp_path / f"mod{i}"
@@ -777,8 +758,8 @@ class TestFindConflictsEdgeCases:
     def test_copy_conflicts_multiple_files(self, tmp_path, monkeypatch):
         """Should copy multiple conflicting files to separate folders"""
         conflicts_dir = tmp_path / "conflicts"
-        monkeypatch.setattr(find_conflicts, 'CONFLICTS_DIR', conflicts_dir)
-        monkeypatch.setattr(find_conflicts, 'SCRIPT_DIR', tmp_path)
+        monkeypatch.setattr(find_conflicts, "CONFLICTS_DIR", conflicts_dir)
+        monkeypatch.setattr(find_conflicts, "SCRIPT_DIR", tmp_path)
 
         # Create files
         mod1_dir = tmp_path / "mod1"
@@ -791,12 +772,12 @@ class TestFindConflictsEdgeCases:
         conflicts = {
             "config1.cfg": {
                 "occurrences": [{"mod": "mod1", "path": file1}],
-                "unique_versions": 1
+                "unique_versions": 1,
             },
             "config2.cfg": {
                 "occurrences": [{"mod": "mod1", "path": file2}],
-                "unique_versions": 1
-            }
+                "unique_versions": 1,
+            },
         }
 
         result = find_conflicts.copy_conflicts_to_folders(conflicts)
@@ -811,8 +792,10 @@ class TestRedactAESKeyEdgeCases:
 
     def test_redact_multiple_aes_keys(self):
         """Multiple --aes-key arguments should all be redacted"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._redact_aes_key.__get__(mock_gui, MockGUI)
 
@@ -825,8 +808,10 @@ class TestRedactAESKeyEdgeCases:
 
     def test_redact_empty_command(self):
         """Empty command list should not crash"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._redact_aes_key.__get__(mock_gui, MockGUI)
 
@@ -835,8 +820,10 @@ class TestRedactAESKeyEdgeCases:
 
     def test_redact_aes_key_at_end(self):
         """--aes-key at end without value should not crash"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._redact_aes_key.__get__(mock_gui, MockGUI)
 
@@ -846,12 +833,22 @@ class TestRedactAESKeyEdgeCases:
 
     def test_redact_preserves_other_args(self):
         """Other arguments should be preserved"""
+
         class MockGUI:
             pass
+
         mock_gui = MockGUI()
         method = repak_gui.RepakGUI._redact_aes_key.__get__(mock_gui, MockGUI)
 
-        cmd = ["repak", "unpack", "file.pak", "--output", "/path/to/output", "--aes-key", "secret"]
+        cmd = [
+            "repak",
+            "unpack",
+            "file.pak",
+            "--output",
+            "/path/to/output",
+            "--aes-key",
+            "secret",
+        ]
         redacted = method(cmd)
 
         assert "repak" in redacted
@@ -867,13 +864,13 @@ class TestConfigFileManagement:
 
     def test_config_file_constant_defined(self):
         """CONFIG_FILE constant should be defined"""
-        assert hasattr(repak_gui, 'CONFIG_FILE')
-        assert repak_gui.CONFIG_FILE.endswith('.json')
+        assert hasattr(repak_gui, "CONFIG_FILE")
+        assert repak_gui.CONFIG_FILE.endswith(".json")
 
     def test_log_file_constant_defined(self):
         """LOG_FILE constant should be defined"""
-        assert hasattr(repak_gui, 'LOG_FILE')
-        assert repak_gui.LOG_FILE.endswith('.log')
+        assert hasattr(repak_gui, "LOG_FILE")
+        assert repak_gui.LOG_FILE.endswith(".log")
 
 
 class TestProcessConstants:
@@ -881,12 +878,12 @@ class TestProcessConstants:
 
     def test_process_poll_interval_defined(self):
         """PROCESS_POLL_INTERVAL should be defined and positive"""
-        assert hasattr(repak_gui, 'PROCESS_POLL_INTERVAL')
+        assert hasattr(repak_gui, "PROCESS_POLL_INTERVAL")
         assert repak_gui.PROCESS_POLL_INTERVAL > 0
 
     def test_is_windows_defined(self):
         """IS_WINDOWS should be defined as boolean"""
-        assert hasattr(repak_gui, 'IS_WINDOWS')
+        assert hasattr(repak_gui, "IS_WINDOWS")
         assert isinstance(repak_gui.IS_WINDOWS, bool)
 
 
@@ -895,7 +892,7 @@ class TestHashChunkSize:
 
     def test_hash_chunk_size_defined(self):
         """HASH_CHUNK_SIZE should be defined and reasonable"""
-        assert hasattr(find_conflicts, 'HASH_CHUNK_SIZE')
+        assert hasattr(find_conflicts, "HASH_CHUNK_SIZE")
         assert find_conflicts.HASH_CHUNK_SIZE > 0
         # Should be a reasonable buffer size (at least 1KB, at most 1MB)
         assert 1024 <= find_conflicts.HASH_CHUNK_SIZE <= 1048576
