@@ -166,7 +166,7 @@ class RepakGUI:
         atexit.register(self._cleanup_subprocess)
 
         # Check for updates on startup if enabled (delay to let UI initialize)
-        if self.config.get("auto_check_updates", True):
+        if self.config.get("auto_check_updates", False):
             self.root.after(
                 2000,
                 lambda: threading.Thread(
@@ -219,7 +219,7 @@ class RepakGUI:
             "recent_files": [],
             "last_unpack_dir": "",
             "last_pack_dir": "",
-            "auto_check_updates": True,
+            "auto_check_updates": False,
         }
         # Note: AES keys are intentionally NOT stored in config for security
 
@@ -546,7 +546,7 @@ https://github.com/trumank/repak
         )
 
         self.auto_check_var = tk.BooleanVar(
-            value=self.config.get("auto_check_updates", True)
+            value=self.config.get("auto_check_updates", False)
         )
         help_menu.add_checkbutton(
             label="Check for Updates on Startup",
