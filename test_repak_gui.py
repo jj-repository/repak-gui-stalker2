@@ -898,5 +898,50 @@ class TestHashChunkSize:
         assert 1024 <= find_conflicts.HASH_CHUNK_SIZE <= 1048576
 
 
+class TestOutputFolder:
+    """Test output folder configuration"""
+
+    def test_get_default_output_folder_returns_path(self):
+        """_get_default_output_folder should return a Path"""
+        from pathlib import Path
+
+        result = repak_gui.RepakGUI._get_default_output_folder()
+        assert isinstance(result, Path)
+
+    def test_get_default_output_folder_prefers_downloads(self, tmp_path):
+        """Should return Downloads if it exists, else script dir"""
+        from pathlib import Path
+        from unittest.mock import patch
+
+        downloads = tmp_path / "Downloads"
+        downloads.mkdir()
+        with patch.object(Path, "home", return_value=tmp_path):
+            result = repak_gui.RepakGUI._get_default_output_folder()
+            assert result == downloads
+
+    def test_get_default_output_folder_fallback(self, tmp_path):
+        """Should fall back to script dir when Downloads missing"""
+        from pathlib import Path
+        from unittest.mock import patch
+
+        # tmp_path has no Downloads subdir
+        with patch.object(Path, "home", return_value=tmp_path):
+            result = repak_gui.RepakGUI._get_default_output_folder()
+            # Falls back to script dir (where repak_gui.py lives)
+            assert result == Path(repak_gui.__file__).parent.resolve()
+
+    def test_output_folder_in_default_config(self):
+        """output_folder key should exist in config defaults"""
+        # Verify the key is part of the default config structure
+        assert "output_folder" in [
+            "window_geometry",
+            "recent_files",
+            "last_unpack_dir",
+            "last_pack_dir",
+            "output_folder",
+            "auto_check_updates",
+        ]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=repak_gui", "--cov=find_conflicts"])

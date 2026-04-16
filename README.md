@@ -72,13 +72,23 @@ Requires Python 3.7+ and tkinter (usually bundled with Python).
 
 ## How to Use
 
+### Setting the output folder
+
+By default, output goes to your **Downloads** folder. To change it:
+
+1. Click **Set Output Folder** (below the tabs)
+2. Pick any folder — unpacked files go to `<folder>/unpackedfiles/`, packed files to `<folder>/packedfiles/`
+3. Click **Reset** to go back to Downloads
+
+The setting is saved between sessions.
+
 ### Unpacking a game pak (extracting files)
 
 1. Open the **Unpack** tab
 2. Click **Browse** (or `Ctrl+O`) and select a `.pak` file
 3. If it's an encrypted game pak, paste the AES key in the **AES-256 Key** field at the bottom
 4. Click **Unpack**
-5. Files go to `unpackedfiles/<pakname>/`
+5. Files go to `<output folder>/unpackedfiles/<pakname>/`
 
 ### Packing a mod (creating a .pak)
 
@@ -86,7 +96,7 @@ Requires Python 3.7+ and tkinter (usually bundled with Python).
 2. Click **Browse** and select your mod folder (must follow the game's directory structure)
 3. Enter a pak name — use STALKER 2 naming convention: `~mods_yourmodname_P`
 4. Click **Pack**
-5. Output goes to `packedfiles/`
+5. Output goes to `<output folder>/packedfiles/`
 
 ### Batch unpacking multiple paks
 
@@ -147,13 +157,15 @@ Scans `unpackedfiles/` for `.cfg` files that appear in multiple mods with differ
 
 ## Output directories
 
+Default output folder: `~/Downloads` (configurable via **Set Output Folder** button).
+
 | Directory | Contents |
 |-----------|----------|
-| `unpackedfiles/` | Extracted pak contents |
-| `packedfiles/` | Created `.pak` files |
-| `conflicts/` | Conflict analysis output |
-| `repak_gui.log` | Operation log (rotated, 5MB max) |
-| `repak_gui_config.json` | Saved settings |
+| `<output folder>/unpackedfiles/` | Extracted pak contents |
+| `<output folder>/packedfiles/` | Created `.pak` files |
+| `conflicts/` | Conflict analysis output (in script dir) |
+| `repak_gui.log` | Operation log (rotated, 5MB max, in script dir) |
+| `repak_gui_config.json` | Saved settings (in script dir) |
 
 ## Troubleshooting
 

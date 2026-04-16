@@ -7,6 +7,7 @@ Single-file: `RepakGUI` class — all UI and logic.
 - Logging: RotatingFileHandler, 5MB limit, 3 backups
 - Thread safety: `threading.Event` for cancellation, `threading.Lock` for shared state
 - Operation guard: `_try_start_operation()` / `_end_operation()` atomic pattern
+- Output folder: configurable base dir (default: ~/Downloads), persisted in config
 
 ## Key Methods
 - `run_repak()` — single subprocess execution with cancel/timeout

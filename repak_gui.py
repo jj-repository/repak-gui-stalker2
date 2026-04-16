@@ -4,7 +4,7 @@ Repak GUI - A simple GUI wrapper for repak (Unreal Engine .pak tool)
 Designed for STALKER 2 modding
 """
 
-__version__ = "1.06"
+__version__ = "1.07"
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -119,9 +119,7 @@ class RepakGUI:
         self._cancel_event = threading.Event()
         self._sha256sums_cache: Dict[str, str] = {}
         self._log_line_count = 0
-
-        self.unpack_dir = self.script_dir / "unpackedfiles"
-        self.pack_dir = self.script_dir / "packedfiles"
+        self._update_in_progress = False  # Guard against concurrent update operations
 
         self.current_process: Optional[subprocess.Popen] = None
         self.operation_thread: Optional[threading.Thread] = None
@@ -132,6 +130,9 @@ class RepakGUI:
 
         self._load_config()
 
+        # Set output folder from config (or default to Downloads)
+        self._apply_output_folder()
+
         geometry = self.config.get("window_geometry", f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         # Validate geometry string format (WIDTHxHEIGHT or WIDTHxHEIGHT+X+Y)
         if not re.match(r"^\d+x\d+([+-]\d+[+-]\d+)?$", geometry):
@@ -141,13 +142,24 @@ class RepakGUI:
         self.root.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
 
         try:
-            self.unpack_dir.mkdir(exist_ok=True)
-            self.pack_dir.mkdir(exist_ok=True)
+            self.unpack_dir.mkdir(parents=True, exist_ok=True)
+            self.pack_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             messagebox.showerror(
-                "Error", f"Failed to create output directories:\n{str(e)}"
+                "Error",
+                f"Failed to create output directories:\n{str(e)}\n\n"
+                "Falling back to script directory.",
             )
             logging.error(f"Failed to create output directories: {e}")
+            # Fall back to script dir so pack/unpack don't fail with missing dirs
+            self.output_folder = self.script_dir
+            self.unpack_dir = self.script_dir / "unpackedfiles"
+            self.pack_dir = self.script_dir / "packedfiles"
+            try:
+                self.unpack_dir.mkdir(exist_ok=True)
+                self.pack_dir.mkdir(exist_ok=True)
+            except Exception:
+                pass  # Best effort — operations will show clear errors at runtime
 
         if not self._validate_repak_binary():
             messagebox.showerror(
@@ -164,6 +176,18 @@ class RepakGUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
         atexit.register(self._cleanup_subprocess)
+
+        # Warn if configured output folder was stale (deferred until after UI init)
+        if self._stale_output_folder:
+            stale = self._stale_output_folder
+            self.root.after(
+                500,
+                lambda: messagebox.showwarning(
+                    "Output Folder Reset",
+                    f"Previously configured output folder no longer exists:\n"
+                    f"{stale}\n\nReset to default: {self.output_folder}",
+                ),
+            )
 
         # Check for updates on startup if enabled (delay to let UI initialize)
         if self.config.get("auto_check_updates", False):
@@ -219,6 +243,7 @@ class RepakGUI:
             "recent_files": [],
             "last_unpack_dir": "",
             "last_pack_dir": "",
+            "output_folder": "",
             "auto_check_updates": False,
         }
         # Note: AES keys are intentionally NOT stored in config for security
@@ -252,7 +277,10 @@ class RepakGUI:
         temp_path = None
         try:
             with self._lock:
-                self.config["window_geometry"] = self.root.geometry()
+                try:
+                    self.config["window_geometry"] = self.root.geometry()
+                except tk.TclError:
+                    pass  # Window may be destroyed during close — keep previous geometry
                 self.config["recent_files"] = self.recent_files[:MAX_RECENT_FILES]
                 config_copy = dict(self.config)
 
@@ -277,6 +305,83 @@ class RepakGUI:
                         temp_path.unlink()
                 except Exception:
                     pass  # Ignore cleanup failures during error handling
+
+    @staticmethod
+    def _get_default_output_folder() -> Path:
+        """Return the default output folder (user's Downloads directory)."""
+        downloads = Path.home() / "Downloads"
+        if downloads.is_dir():
+            return downloads
+        return Path(__file__).parent.resolve()
+
+    def _apply_output_folder(self) -> None:
+        """Set unpack_dir and pack_dir from the configured output folder."""
+        self._stale_output_folder = None
+        configured = self.config.get("output_folder", "").strip()
+        if configured:
+            validated = self._validate_path(configured, must_exist=True)
+            if validated and validated.is_dir():
+                base = validated
+            else:
+                # Configured folder gone or invalid — clear stale value, warn later
+                logging.warning(
+                    f"Configured output folder no longer valid: {configured}"
+                )
+                self._stale_output_folder = configured
+                self.config["output_folder"] = ""
+                base = self._get_default_output_folder()
+        else:
+            base = self._get_default_output_folder()
+        self.output_folder = base
+        self.unpack_dir = base / "unpackedfiles"
+        self.pack_dir = base / "packedfiles"
+
+    def _set_output_folder(self) -> None:
+        """Let the user pick a new output folder via dialog."""
+        folder = filedialog.askdirectory(
+            title="Set Output Folder",
+            initialdir=str(self.output_folder),
+        )
+        if not folder:
+            return
+        folder_path = Path(folder)
+        if not folder_path.is_dir():
+            messagebox.showerror("Error", f"Not a valid directory:\n{folder}")
+            return
+        self.config["output_folder"] = str(folder_path)
+        self._apply_output_folder()
+        try:
+            self.unpack_dir.mkdir(parents=True, exist_ok=True)
+            self.pack_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create output directories:\n{e}")
+            logging.error(f"Failed to create output directories: {e}")
+            return
+        self._update_output_labels()
+        self._save_config()
+        logging.info(f"Output folder set to: {folder_path}")
+
+    def _reset_output_folder(self) -> None:
+        """Reset output folder to default (Downloads)."""
+        self.config["output_folder"] = ""
+        self._apply_output_folder()
+        try:
+            self.unpack_dir.mkdir(parents=True, exist_ok=True)
+            self.pack_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create output directories:\n{e}")
+            logging.error(f"Failed to create output directories: {e}")
+            return
+        self._update_output_labels()
+        self._save_config()
+        logging.info(f"Output folder reset to default: {self.output_folder}")
+
+    def _update_output_labels(self) -> None:
+        """Update all output path labels in the UI."""
+        self._unpack_output_var.set(f"Output: {self.unpack_dir}")
+        self._pack_output_var.set(f"Output: {self.pack_dir}")
+        self._batch_output_var.set(f"Output: {self.unpack_dir}")
+        self._output_folder_var.set(str(self.output_folder))
 
     def _on_closing(self) -> None:
         """Handle window close event"""
@@ -561,6 +666,12 @@ https://github.com/trumank/repak
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
+        # Output path StringVars (initialized before tabs so labels can bind to them)
+        self._unpack_output_var = tk.StringVar(value=f"Output: {self.unpack_dir}")
+        self._pack_output_var = tk.StringVar(value=f"Output: {self.pack_dir}")
+        self._batch_output_var = tk.StringVar(value=f"Output: {self.unpack_dir}")
+        self._output_folder_var = tk.StringVar(value=str(self.output_folder))
+
         notebook = ttk.Notebook(main_frame)
         notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
@@ -579,6 +690,22 @@ https://github.com/trumank/repak
         batch_frame = ttk.Frame(notebook, padding="10")
         notebook.add(batch_frame, text="Batch Unpack")
         self.setup_batch_unpack_tab(batch_frame)
+
+        # Output folder selector
+        output_frame = ttk.LabelFrame(main_frame, text="Output Folder", padding="5")
+        output_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(
+            output_frame, textvariable=self._output_folder_var, foreground="blue"
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(
+            output_frame,
+            text="Set Output Folder",
+            command=self._set_output_folder,
+        ).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(output_frame, text="Reset", command=self._reset_output_folder).pack(
+            side=tk.LEFT, padx=(5, 0)
+        )
 
         aes_frame = ttk.LabelFrame(
             main_frame, text="AES-256 Key (for encrypted paks)", padding="5"
@@ -655,7 +782,7 @@ https://github.com/trumank/repak
             text="Select a .pak file to extract its contents.",
             foreground="gray",
         ).pack()
-        ttk.Label(parent, text=f"Output: {self.unpack_dir}", foreground="blue").pack(
+        ttk.Label(parent, textvariable=self._unpack_output_var, foreground="blue").pack(
             pady=(5, 0)
         )
 
@@ -697,7 +824,7 @@ https://github.com/trumank/repak
             text="Tip: For STALKER 2, use ~mods prefix (e.g., ~mods_mymod_P)",
             foreground="gray",
         ).pack()
-        ttk.Label(parent, text=f"Output: {self.pack_dir}", foreground="blue").pack(
+        ttk.Label(parent, textvariable=self._pack_output_var, foreground="blue").pack(
             pady=(5, 0)
         )
 
@@ -808,7 +935,7 @@ https://github.com/trumank/repak
             text="Each pak will be unpacked into its own folder.",
             foreground="gray",
         ).pack()
-        ttk.Label(parent, text=f"Output: {self.unpack_dir}", foreground="blue").pack(
+        ttk.Label(parent, textvariable=self._batch_output_var, foreground="blue").pack(
             pady=(5, 0)
         )
 
@@ -1167,7 +1294,6 @@ https://github.com/trumank/repak
         output_dir = self.unpack_dir / pak_name
 
         def on_complete(success: bool) -> None:
-            self._end_operation()
             if success:
                 messagebox.showinfo(
                     "Unpack Complete",
@@ -1233,7 +1359,6 @@ https://github.com/trumank/repak
         output_pak = self.pack_dir / pak_name
 
         def on_complete(success):
-            self._end_operation()
             if success:
                 messagebox.showinfo(
                     "Pack Complete",
@@ -1273,11 +1398,8 @@ https://github.com/trumank/repak
             )
             return
 
-        def on_complete(success: bool) -> None:
-            self._end_operation()
-
         self.show_progress(progress_label)
-        self.run_repak([subcommand, str(validated_path)], callback=on_complete)
+        self.run_repak([subcommand, str(validated_path)])
 
     def do_info(self) -> None:
         self._do_pak_query("info", "Getting info...")
@@ -1511,6 +1633,9 @@ https://github.com/trumank/repak
 
     def _check_for_updates_clicked(self) -> None:
         """Handle Check for Updates menu click."""
+        if self._update_in_progress:
+            messagebox.showinfo("Update", "Update check already in progress.")
+            return
         threading.Thread(
             target=self._check_for_updates, args=(False,), daemon=True
         ).start()
@@ -1525,6 +1650,9 @@ https://github.com/trumank/repak
         import urllib.request
         import urllib.error
 
+        if self._update_in_progress:
+            return
+        self._update_in_progress = True
         try:
             logging.info("Checking for updates...")
 
@@ -1570,6 +1698,8 @@ https://github.com/trumank/repak
                 self.root.after(
                     0, lambda m=msg: messagebox.showerror("Update Error", m)
                 )
+        finally:
+            self._update_in_progress = False
 
     def _show_update_dialog(self, latest_version: str, release_data: dict) -> None:
         """Show update available dialog with options."""
@@ -1613,13 +1743,6 @@ https://github.com/trumank/repak
         y = (dialog.winfo_screenheight() - dialog.winfo_height()) // 2
         dialog.geometry(f"+{x}+{y}")
 
-    def _compute_git_blob_sha(self, content):
-        """Compute git blob SHA1 (same as git hash-object)."""
-        import hashlib
-
-        header = f"blob {len(content)}\0".encode()
-        return hashlib.sha1(header + content).hexdigest()
-
     def _get_expected_sha256(
         self, release_data: dict, asset_name: str, headers: Dict[str, str]
     ) -> Optional[str]:
@@ -1654,13 +1777,12 @@ https://github.com/trumank/repak
         headers: Dict[str, str],
         release_data: Optional[dict] = None,
     ) -> None:
-        """Verify downloaded content integrity. SHA-256 is primary, git blob SHA-1 is fallback."""
+        """Verify downloaded content integrity via SHA-256 from release SHA256SUMS."""
         import hashlib
-        import urllib.request
 
         sha256_verified = False
 
-        # SHA-256: primary verification from release SHA256SUMS asset
+        # SHA-256: verification from release SHA256SUMS asset
         if release_data is not None:
             expected_256 = self._get_expected_sha256(release_data, filename, headers)
             if expected_256 is not None:
@@ -1674,31 +1796,23 @@ https://github.com/trumank/repak
                 logging.info(f"SHA-256 verified for {filename}")
                 sha256_verified = True
 
-        # SHA-1: git blob hash as fallback when SHA-256 was unavailable
+        # Refuse update if SHA-256 verification was not possible
         if not sha256_verified:
-            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}?ref={tag_name}"
-            request = urllib.request.Request(api_url, headers=headers)
-            with urllib.request.urlopen(request, timeout=30) as response:
-                file_info = json.loads(response.read().decode())
-            expected_sha = file_info.get("sha", "")
-            actual_sha = self._compute_git_blob_sha(content)
-            if actual_sha != expected_sha:
-                raise RuntimeError(
-                    f"SHA-1 integrity check failed for {filename}!\n"
-                    f"Expected: {expected_sha[:16]}...\n"
-                    f"Got: {actual_sha[:16]}..."
-                )
-            logging.info(
-                f"SHA256SUMS not available for {filename}, verified by SHA-1 only"
+            raise RuntimeError(
+                f"SHA256SUMS not available for {filename}. "
+                "Update refused — download manually from the releases page."
             )
 
     def _apply_update(self, release_data: dict) -> None:
-        """Download and apply update with git blob SHA integrity verification."""
+        """Download and apply update with SHA-256 integrity verification."""
         import urllib.request
         import urllib.error
         import shutil
         import tempfile
 
+        if self._update_in_progress:
+            return
+        self._update_in_progress = True
         tmp_path = None
         try:
             tag_name = release_data.get("tag_name", "main")
@@ -1721,7 +1835,7 @@ https://github.com/trumank/repak
                     os.fsync(tmp_file.fileno())  # Ensure data is written to disk
                 tmp_path = tmp_file.name
 
-            # Verify integrity: SHA-256 (from release) + SHA-1 (git blob)
+            # Verify integrity: SHA-256 from release SHA256SUMS
             self._verify_file_against_github(
                 tag_name, "repak_gui.py", content, headers, release_data=release_data
             )
@@ -1758,6 +1872,7 @@ https://github.com/trumank/repak
             msg = f"Failed to download update:\n{e}"
             self.root.after(0, lambda m=msg: messagebox.showerror("Update Failed", m))
         finally:
+            self._update_in_progress = False
             if tmp_path is not None:
                 try:
                     Path(tmp_path).unlink()

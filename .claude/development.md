@@ -7,14 +7,14 @@ python3 repak_gui.py
 ./run.sh
 ```
 
-## Tests (86 total)
+## Tests (90 total)
 ```bash
 python3 -m pytest test_repak_gui.py -v
 # With coverage:
 python3 -m pytest test_repak_gui.py -v --cov=repak_gui --cov=find_conflicts
 ```
 
-Categories: AESKeyValidation, RedactAESKey, PathValidation, ConfigPersistence, RecentFilesLimit, FindConflicts, VersionComparison, Constants, CopyConflictsToFolders, AESKeyEdgeCases, PathValidationEdgeCases, GitHubConstants, UIConstants, AESKeyPatterns, FindConflictsEdgeCases
+Categories: AESKeyValidation, RedactAESKey, PathValidation, ConfigPersistence, RecentFilesLimit, FindConflicts, VersionComparison, Constants, CopyConflictsToFolders, AESKeyEdgeCases, PathValidationEdgeCases, GitHubConstants, UIConstants, AESKeyPatterns, FindConflictsEdgeCases, OutputFolder
 
 ## Dependencies
 All stdlib: `tkinter`, `subprocess`, `threading`, `json`, `logging`, `re`, `hashlib`

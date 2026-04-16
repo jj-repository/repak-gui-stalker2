@@ -5,6 +5,28 @@ All notable changes to Repak GUI will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows X.YY display format (see CLAUDE.md).
 
+## [1.07] - 2026-04-16
+
+### Added
+- Configurable output folder with "Set Output Folder" button
+- Default output to ~/Downloads instead of script directory
+- "Reset" button to restore default output folder
+- Dynamic output path labels update across all tabs
+
+## [1.06] - 2026-04-16
+
+### Changed
+- Thread-safe cancellation via `threading.Event` (replaces bare bool)
+- SHA-256 as primary update verification, SHA-1 as fallback only
+- Lock scoping: hold only for data snapshot, release before I/O
+- Counter-based log trimming (check every 500 lines, not per-call)
+- Auto-update check disabled by default
+- CI: hardened permissions, timeouts, pip caching
+
+### Fixed
+- `_sha256sums_cache` properly initialized in `__init__`
+- Deduplicated do_info/do_list into `_do_pak_query()`
+
 ## [1.05] - 2026-03-28
 
 ### Changed

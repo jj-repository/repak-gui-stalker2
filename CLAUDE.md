@@ -1,7 +1,7 @@
 # Repak GUI (STALKER 2)
 
 Python/tkinter GUI for the `repak` CLI (Unreal Engine .pak files). STALKER 2 modding tool — pack/unpack .pak with AES encryption. Stack: Python, tkinter.
-v1.06
+v1.07
 
 Docs: .claude/index.md
 
