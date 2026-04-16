@@ -6,25 +6,20 @@
 | Single-file | Drop alongside repak binary; simple distribution |
 | Config in script dir | Portable; users expect self-contained tool |
 | 1-hour timeout | Large pak files take time |
-| Optional tkinterdnd2 | Graceful degradation if not installed |
 | Recent files max 10 | Enough convenience, no bloat |
+| Auto-update off by default | User must opt in; no unsolicited network calls |
+| threading.Event for cancel | Thread-safe without explicit lock on every read |
 
 ## Won't Fix
 | Issue | Reason |
 |-------|--------|
 | Config in script dir | Intentional portability |
-| DnD not wired | tkinterdnd2 imported but incomplete; low priority |
 | No per-file progress bars | Single label sufficient; batch shows count |
-
-## Known Issues
-1. Config should use `~/.config/repak-gui/` — intentionally not fixed (portability)
-2. Drag-and-drop imported but not wired up
-
-## Recent Fixes (Jan 2026)
-`root.after()` dict arg fix, lock on `current_process`, empty pak name validation, zombie process leak on Unix (wait+kill fallback) ✓
+| Subprocess code duplication | run_repak vs _batch_run — stable, refactor not worth it |
+| GPG-signed updates | Overkill for STALKER 2 modding tool |
 
 ## Quality Standards
 Target: reliable STALKER 2 modding tool.
 Do not optimize: pack/unpack speed = repak binary + disk I/O.
 
-Version bumps default to **+0.0.1** unless told otherwise. Each component 0–9; rollover on overflow (0.0.9 → 0.1.0).
+Versioning: X.YY display format (see project_versioning.md). Bump minor for features, patch for fixes.

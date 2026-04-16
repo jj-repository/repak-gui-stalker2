@@ -2,20 +2,30 @@
 
 ## Run
 ```bash
-python repak_gui.py
-pip install tkinterdnd2  # optional drag-and-drop
+python3 repak_gui.py
+# Or on Linux:
+./run.sh
 ```
 
-## Tests (85 total)
+## Tests (86 total)
 ```bash
-python -m pytest test_repak_gui.py -v
+python3 -m pytest test_repak_gui.py -v
+# With coverage:
+python3 -m pytest test_repak_gui.py -v --cov=repak_gui --cov=find_conflicts
 ```
-Categories: AESKeyValidation, RedactAESKey, PathValidation, ConfigPersistence, RecentFilesLimit, FindConflicts, VersionDefined, Constants, CopyConflictsToFolders
+
+Categories: AESKeyValidation, RedactAESKey, PathValidation, ConfigPersistence, RecentFilesLimit, FindConflicts, VersionComparison, Constants, CopyConflictsToFolders, AESKeyEdgeCases, PathValidationEdgeCases, GitHubConstants, UIConstants, AESKeyPatterns, FindConflictsEdgeCases
 
 ## Dependencies
-All stdlib: `tkinter`, `subprocess`, `threading`, `json`, `logging`, `re`
-Optional: `tkinterdnd2`
+All stdlib: `tkinter`, `subprocess`, `threading`, `json`, `logging`, `re`, `hashlib`
+Dev: `pytest`, `pytest-cov`, `ruff`
+
+## CI
+- `test.yml` — pytest + ruff lint on push/PR
+- `build-release.yml` — PyInstaller builds + GitHub Release on tag
+- `security-scan.yml` — dangerous pattern detection on PR
+- `codeql.yml` — CodeQL analysis
 
 ## Platform Notes
-- Windows: `repak.exe` in script dir or PATH, native file dialogs
-- Linux: `repak` binary in script dir or PATH; DnD may not work on Wayland without setup
+- Windows: `repak.exe` in script dir, needs `oo2core_9_win64.dll`
+- Linux: `repak` binary in script dir, tkinter via package manager

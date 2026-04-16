@@ -1,291 +1,205 @@
 # Repak GUI for STALKER 2
 
 [![Build](https://github.com/jj-repository/repak-gui-stalker2/actions/workflows/build-release.yml/badge.svg)](https://github.com/jj-repository/repak-gui-stalker2/actions/workflows/build-release.yml)
+[![Tests](https://github.com/jj-repository/repak-gui-stalker2/actions/workflows/test.yml/badge.svg)](https://github.com/jj-repository/repak-gui-stalker2/actions/workflows/test.yml)
 [![Latest Release](https://img.shields.io/github/v/release/jj-repository/repak-gui-stalker2)](https://github.com/jj-repository/repak-gui-stalker2/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/jj-repository/repak-gui-stalker2/total)](https://github.com/jj-repository/repak-gui-stalker2/releases)
 ![Python](https://img.shields.io/badge/python-3.7+-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
 
-## ✨ Features
+A graphical wrapper for [repak](https://github.com/trumank/repak) — the Unreal Engine .pak file tool. Built specifically for STALKER 2 modding.
 
-### Core Functionality
-- **Unpack/Pack PAK Files** - Extract and create .pak files with ease
-- **Batch Operations** - Process multiple .pak files at once
-- **AES-256 Encryption Support** - Handle encrypted pak files
-- **Info & List** - View pak file metadata and contents
+## Before You Start
 
-### User Experience
-- **Recent Files** - Quick access to previously opened files (up to 10)
-- **Keyboard Shortcuts** - Efficient workflow with hotkeys
-- **Context Menus** - Right-click options in batch list
-- **Progress Tracking** - Visual feedback during operations
-- **Operation Cancellation** - Cancel long-running operations with Escape key
-- **Configuration Persistence** - Remembers window size and recent files
+You need two things before using this tool:
 
-### Advanced Features
-- **File-based Logging** - All operations logged to `repak_gui.log`
-- **Export Logs** - Save operation logs to text files
-- **Path Validation** - Security against path traversal attacks
-- **AES Key Redaction** - Encryption keys hidden in logs for security
-- **Type Hints** - Full type annotations for better code quality
+### 1. The repak binary
 
-### Security Features
-- ✅ Path traversal protection
-- ✅ AES key redaction in logs
-- ✅ Binary integrity validation
-- ✅ SHA-256 file hashing (in conflict detection)
-- ✅ Input validation and sanitization
-- ✅ SHA-256 verified updates
+The `repak` binary handles all pak/unpack operations. This GUI is just a wrapper around it.
 
-### Auto-Updates
-- **Automatic update checking** on startup (configurable via Help menu)
-- **One-click updates** with SHA256 checksum verification
-- **Backup creation** before applying updates
-- **Manual update check** via Help menu
-- **GitHub Releases integration** - direct link to releases page
+- **Pre-built releases** already include `repak` — download from [Releases](https://github.com/jj-repository/repak-gui-stalker2/releases/latest)
+- **From source**: download `repak` from [trumank/repak](https://github.com/trumank/repak/releases) and place it in the same directory as `repak_gui.py`
 
-## 📋 Requirements
+### 2. The STALKER 2 AES encryption key (for unpacking game paks)
 
-### For Pre-built Releases (Recommended)
-- **Linux**: Just download and run - fully self-contained!
-- **Windows**: Requires `oo2core_9_win64.dll` (see below)
+STALKER 2 game paks are AES-256 encrypted. You need the decryption key to unpack them.
 
-### Windows: Required DLL
+**Where to find the key:**
+- Search the [STALKER 2 Modding Wiki](https://s2modding.wiki/) or modding Discord servers for the current AES key
+- The key is a 64-character hex string (e.g., `0x1A2B3C...`)
+- Paste it into the "AES-256 Key" field in the GUI
 
-Windows users must place `oo2core_9_win64.dll` in the same directory as `repak-gui.exe`.
+**You do NOT need an AES key for:**
+- Unpacking mods made by other modders (most are unencrypted)
+- Packing your own mods
+
+### 3. Windows only: Oodle DLL
+
+Windows users must place `oo2core_9_win64.dll` in the same directory as the executable.
 
 **Where to find it:**
-1. Navigate to your STALKER 2 installation folder
-2. Go to `Stalker2/Content/Paks/`
-3. Copy `oo2core_9_win64.dll` to the same folder as `repak-gui.exe`
+1. Go to your STALKER 2 install folder: `Stalker2/Content/Paks/`
+2. Copy `oo2core_9_win64.dll` next to `RepakGUI.exe`
 
-> **Note**: This DLL is a proprietary Oodle compression library from Epic Games and cannot be bundled with the release due to licensing restrictions. It's required for handling STALKER 2's compressed pak files.
+This is a proprietary Oodle compression library from Epic Games and cannot be bundled due to licensing.
 
-### For Running from Source
-- Python 3.7 or higher
-- tkinter (usually included with Python)
-- repak binary (included in this repository)
+## Installation
 
-### Optional
-- `tkinterdnd2` - For drag-and-drop support (not required)
-- `pytest` - For running tests
+### Option A: Pre-built executable (recommended)
 
-## 🚀 Installation
+Download from [Releases](https://github.com/jj-repository/repak-gui-stalker2/releases/latest):
 
-### Method 1: Direct Run (Linux)
+| Platform | File | Notes |
+|----------|------|-------|
+| Windows | `RepakGUI.exe` | Needs `oo2core_9_win64.dll` alongside |
+| Linux | `RepakGUI-Linux` | `chmod +x RepakGUI-Linux` then run |
+
+### Option B: Run from source (Linux)
+
 ```bash
-# Make the launcher executable
 chmod +x run.sh
-
-# Run the application
 ./run.sh
 ```
 
-### Method 2: Python
-```bash
-# Install optional dependencies (if desired)
-pip install -r requirements.txt
+The launcher auto-detects your package manager and installs tkinter if missing.
 
-# Run directly
+### Option C: Run with Python directly
+
+```bash
 python3 repak_gui.py
 ```
 
-### Method 3: Standalone Executables
-Download pre-built binaries from the [Releases](https://github.com/yourusername/repak_gui_forstalker2/releases) page:
-- **Windows**: `repak-gui.exe`
-- **Linux**: `repak-gui`
+Requires Python 3.7+ and tkinter (usually bundled with Python).
 
-## 📖 Usage
+## How to Use
 
-### Unpack Tab
-1. Click "Browse..." or press **Ctrl+O** to select a .pak file
-2. Enter AES key if the pak is encrypted
-3. Click "Unpack" to extract to `unpackedfiles/`
+### Unpacking a game pak (extracting files)
 
-### Pack Tab
-1. Select source directory containing your mod files
-2. Enter a name for the .pak file (e.g., `~mods_mymod_P`)
-3. Click "Pack" to create pak in `packedfiles/`
+1. Open the **Unpack** tab
+2. Click **Browse** (or `Ctrl+O`) and select a `.pak` file
+3. If it's an encrypted game pak, paste the AES key in the **AES-256 Key** field at the bottom
+4. Click **Unpack**
+5. Files go to `unpackedfiles/<pakname>/`
 
-### Batch Unpack Tab
-1. Add files via "Add Files..." or "Add Folder..."
-2. Reorder with right-click context menu (Move Up/Down)
-3. Click "Unpack All" to process all files
-4. Press **Escape** to cancel at any time
+### Packing a mod (creating a .pak)
 
-### Info/List Tab
-- **Show Info**: Display pak file metadata
-- **List Contents**: View all files in the pak
+1. Open the **Pack** tab
+2. Click **Browse** and select your mod folder (must follow the game's directory structure)
+3. Enter a pak name — use STALKER 2 naming convention: `~mods_yourmodname_P`
+4. Click **Pack**
+5. Output goes to `packedfiles/`
 
-## ⌨️ Keyboard Shortcuts
+### Batch unpacking multiple paks
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+O` | Open/Browse PAK file |
-| `Ctrl+L` | Clear log |
-| `Ctrl+E` | Export log to file |
-| `Ctrl+Q` | Quit application |
-| `Escape` | Cancel current operation |
+1. Open the **Batch Unpack** tab
+2. **Add Files** or **Add Folder** to queue `.pak` files
+3. Right-click the list to reorder (Move Up/Down) or remove entries
+4. Click **Unpack All**
+5. Press `Escape` to cancel at any time
 
-## 🖱️ Context Menu (Batch List)
+### Viewing pak contents without unpacking
 
-Right-click on the batch list for:
-- Remove Selected
-- Clear All
-- Move Up/Down - Reorder files
+1. Open the **Info/List** tab
+2. Browse for a `.pak` file
+3. **Show Info** for metadata, **List Contents** for file listing
 
-## 📁 Output Directories
+## STALKER 2 Modding Tips
 
-- **Unpacked files**: `unpackedfiles/`
-- **Packed files**: `packedfiles/`
-- **Conflict analysis**: `conflicts/` (when using find_conflicts.py)
-- **Logs**: `repak_gui.log`
-- **Configuration**: `repak_gui_config.json`
+### Pak naming convention
 
-## 🔧 Utilities
+Use the `~mods` prefix for mod paks:
+- Format: `~mods_modname_P.pak`
+- Example: `~mods_betterweapons_P.pak`
 
-### Find Conflicts (find_conflicts.py)
-Detects conflicting .cfg files across multiple unpacked mods:
+This ensures mods load with correct priority.
+
+### Recommended workflow
+
+1. Unpack the game pak containing the files you want to modify
+2. Find and edit the relevant files
+3. Recreate the game's directory structure in a new folder with only your changed files
+4. Pack with `~mods_yourmod_P` name
+5. Place the `.pak` in `Stalker2/Content/Paks/~mods/`
+6. Use `find_conflicts.py` to check compatibility with other mods
+
+### Detecting mod conflicts
 
 ```bash
 python3 find_conflicts.py
 ```
 
-This tool:
-- Scans all unpacked mods in `unpackedfiles/`
-- Identifies duplicate filenames with different content (SHA-256 hashing)
-- Organizes conflicts into `conflicts/` folder for easy comparison
+Scans `unpackedfiles/` for `.cfg` files that appear in multiple mods with different content. Copies conflicting versions into `conflicts/` for side-by-side comparison.
 
-## 🧪 Testing
+## Keyboard Shortcuts
 
-Run the test suite:
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+O` | Browse for pak file |
+| `Ctrl+L` | Clear log |
+| `Ctrl+E` | Export log to file |
+| `Ctrl+Q` | Quit |
+| `Escape` | Cancel current operation |
 
-```bash
-# Install test dependencies
-pip install pytest pytest-cov
+## Updates
 
-# Run tests
-pytest test_repak_gui.py -v
+- **Manual check**: Help menu > Check for Updates
+- **Auto-check on startup**: Disabled by default. Enable via Help menu > "Check for Updates on Startup"
+- Updates are verified with SHA-256 checksums and a backup is created before applying
 
-# Run with coverage
-pytest test_repak_gui.py -v --cov=repak_gui --cov=find_conflicts
-```
+## Output directories
 
-## 🔨 Building
+| Directory | Contents |
+|-----------|----------|
+| `unpackedfiles/` | Extracted pak contents |
+| `packedfiles/` | Created `.pak` files |
+| `conflicts/` | Conflict analysis output |
+| `repak_gui.log` | Operation log (rotated, 5MB max) |
+| `repak_gui_config.json` | Saved settings |
 
-Create standalone executables:
+## Troubleshooting
 
-```bash
-# Install PyInstaller
-pip install pyinstaller
+### Linux: "tkinter not found"
 
-# Linux
-pyinstaller --onefile --name repak-gui repak_gui.py
-
-# Windows (with GUI mode)
-pyinstaller --onefile --windowed --name repak-gui repak_gui.py
-```
-
-## 🐛 Troubleshooting
-
-### Linux: Tkinter not found
-The launcher will auto-detect your package manager and offer to install:
+Install via your package manager:
 - **Arch**: `sudo pacman -S tk`
-- **Debian/Ubuntu**: `sudo apt-get install python3-tk`
+- **Debian/Ubuntu**: `sudo apt install python3-tk`
 - **Fedora**: `sudo dnf install python3-tkinter`
+- **openSUSE**: `sudo zypper install python3-tk`
 
-### Windows: Missing DLL
-Copy `oo2core_9_win64.dll` from your STALKER 2 installation (`Stalker2/Content/Paks/`) to the same directory as `repak-gui.exe`. See the Requirements section above for details.
+Or use `./run.sh` which handles this automatically.
 
-### Operation Fails
-1. Check the log output in the application
-2. View detailed logs in `repak_gui.log`
-3. Export logs with **Ctrl+E** for sharing
+### Windows: operation fails immediately
 
-### Update Issues
-- **"Checksum verification failed"**: Downloaded file corrupted, try again
-- **"Could not find checksum file"**: Checksum not yet published for this release
-- **Cannot check for updates**: Check your internet connection
-- **Restore from backup**: If update fails, restore from `.py.backup` file
+Make sure `oo2core_9_win64.dll` is in the same directory as the executable. See [Before You Start](#3-windows-only-oodle-dll).
 
-## 🎮 STALKER 2 Modding Tips
+### "repak binary not found"
 
-### Pak Naming Convention
-Use the `~mods` prefix for mod paks:
-- Format: `~mods_modname_P.pak`
-- Example: `~mods_betterweapons_P.pak`
+Place the `repak` binary (Linux) or `repak.exe` (Windows) in the same directory as the GUI.
 
-This ensures mods load with correct priority in STALKER 2.
+### Encrypted pak won't unpack
 
-### Recommended Workflow
-1. Unpack existing game paks to study structure
-2. Create your mod folder following the game's directory structure
-3. Pack with appropriate name
-4. Test in-game
-5. Use find_conflicts.py to detect compatibility issues with other mods
+- Verify the AES key is correct (64 hex characters or base64)
+- Make sure there are no leading/trailing spaces
+- The key must match the game version — keys can change with game updates
 
-## 📝 Changelog
+## Development
 
-See [CHANGELOG.md](CHANGELOG.md) for version history and changes.
-
-## 🙏 Credits
-
-This GUI wrapper is built on top of **[repak](https://github.com/trumank/repak)** by trumank.
-
-repak is a powerful command-line tool for working with Unreal Engine .pak files. All pak/unpak functionality is provided by repak - this project simply provides a graphical interface for convenience.
-
-## 📄 License
-
-This GUI wrapper is provided as-is for the STALKER 2 modding community. Please refer to the [original repak repository](https://github.com/trumank/repak) for its license terms.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
-### Development Setup
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/repak_gui_forstalker2.git
-cd repak_gui_forstalker2
-
-# Install development dependencies
-pip install -r requirements.txt
-
 # Run tests
+pip install pytest pytest-cov
 pytest test_repak_gui.py -v
+
+# With coverage
+pytest test_repak_gui.py -v --cov=repak_gui --cov=find_conflicts
+
+# Lint
+pip install ruff
+ruff check repak_gui.py find_conflicts.py
 ```
 
-## 🌟 Features Comparison
+## Credits
 
-| Feature | v1.0.0 | v1.1.0 | v1.2.0 | v1.3.0 | v1.4.0 |
-|---------|---------|---------|---------|---------|---------|
-| Basic unpack/pack | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Batch operations | ✅ | ✅ | ✅ | ✅ | ✅ |
-| AES encryption | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Recent files | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Keyboard shortcuts | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Operation cancellation | ❌ | ✅ | ✅ | ✅ | ✅ |
-| File-based logging | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Export logs | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Context menus | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Configuration persistence | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Security hardening | ⚠️ Basic | ✅ Advanced | ✅ Advanced | ✅ Advanced | ✅ Advanced |
-| Type hints | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Unit tests | ❌ | ✅ | ✅ (31 tests) | ✅ (31 tests) | ✅ (31 tests) |
-| AES key validation | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Windows full compatibility | ⚠️ Partial | ⚠️ Partial | ✅ Full | ✅ Full | ✅ Full |
-| Thread safety locks | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Subprocess timeout protection | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Auto-update with SHA256 | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Update toggle setting | ❌ | ❌ | ❌ | ❌ | ✅ |
+Built on top of [repak](https://github.com/trumank/repak) by trumank. All pak/unpack functionality comes from repak — this project provides the graphical interface.
 
-## 📞 Support
+## License
 
-For issues specific to:
-- **This GUI**: Open an issue on this repository
-- **Repak functionality**: Refer to the [repak repository](https://github.com/trumank/repak)
-- **STALKER 2 modding**: Visit STALKER 2 modding communities
-
----
-
-**Made with ❤️ for the STALKER 2 modding community**
+[MIT](LICENSE)
