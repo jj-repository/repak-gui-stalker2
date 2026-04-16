@@ -4,7 +4,7 @@ Repak GUI - A simple GUI wrapper for repak (Unreal Engine .pak tool)
 Designed for STALKER 2 modding
 """
 
-__version__ = "1.05"
+__version__ = "1.06"
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
