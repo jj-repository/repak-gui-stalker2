@@ -31,8 +31,10 @@ LOG_FONT_SIZE = 9
 
 # Process Constants
 SUBPROCESS_TIMEOUT = 3600  # 1 hour timeout for long operations
-PROCESS_POLL_INTERVAL = 0.1  # Seconds between process output polls
 IS_WINDOWS = sys.platform.startswith("win")
+
+# Log Constants
+MAX_LOG_LINES = 5000
 
 # Configuration
 CONFIG_FILE = "repak_gui_config.json"
@@ -114,12 +116,13 @@ class RepakGUI:
 
         self._lock = threading.Lock()
         self._operation_in_progress = False  # Flag for atomic operation start check
+        self._cancel_event = threading.Event()
         self._sha256sums_cache: Dict[str, str] = {}
+        self._log_line_count = 0
 
         self.unpack_dir = self.script_dir / "unpackedfiles"
         self.pack_dir = self.script_dir / "packedfiles"
 
-        self.cancel_requested = False
         self.current_process: Optional[subprocess.Popen] = None
         self.operation_thread: Optional[threading.Thread] = None
 
@@ -253,18 +256,18 @@ class RepakGUI:
                 self.config["recent_files"] = self.recent_files[:MAX_RECENT_FILES]
                 config_copy = dict(self.config)
 
-                temp_path = self.config_path.with_suffix(".json.tmp")
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    json.dump(config_copy, f, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())  # Ensure data is written to disk
+            # I/O outside lock to avoid blocking worker threads during fsync
+            temp_path = self.config_path.with_suffix(".json.tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(config_copy, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
 
-                if IS_WINDOWS:
-                    # Windows: use os.replace which is atomic when on same filesystem
-                    os.replace(str(temp_path), str(self.config_path))
-                else:
-                    temp_path.rename(self.config_path)
-                temp_path = None  # Mark as successfully moved
+            if IS_WINDOWS:
+                os.replace(str(temp_path), str(self.config_path))
+            else:
+                temp_path.rename(self.config_path)
+            temp_path = None  # Mark as successfully moved
             logging.info("Configuration saved successfully")
         except (IOError, OSError) as e:
             logging.error(f"Failed to save config: {e}")
@@ -279,8 +282,8 @@ class RepakGUI:
         """Handle window close event"""
         self._save_config()
 
+        self._cancel_event.set()
         with self._lock:
-            self.cancel_requested = True
             process_to_terminate = self.current_process
 
         if process_to_terminate:
@@ -295,9 +298,9 @@ class RepakGUI:
 
     def _cleanup_subprocess(self) -> None:
         """Cleanup any running subprocess on unexpected exit (atexit handler)"""
+        self._cancel_event.set()
         with self._lock:
             process_to_terminate = self.current_process
-            self.cancel_requested = True
 
         if process_to_terminate:
             try:
@@ -366,11 +369,10 @@ class RepakGUI:
         """Request cancellation of current operation (thread-safe)"""
         with self._lock:
             has_active_operation = self.current_process or self.operation_thread
-            if has_active_operation:
-                self.cancel_requested = True
-                process_to_terminate = self.current_process
-            else:
+            if not has_active_operation:
                 return  # Nothing to cancel
+            self._cancel_event.set()
+            process_to_terminate = self.current_process
 
         self.log("⚠️ Cancellation requested...")
         logging.info("User requested operation cancellation")
@@ -931,13 +933,16 @@ https://github.com/trumank/repak
                 self.batch_listbox.selection_set(index + 1)
 
     def log(self, message: str) -> None:
-        MAX_LOG_LINES = 5000
+        self._log_line_count += 1
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, message + "\n")
-        # Limit log to MAX_LOG_LINES to prevent unbounded memory growth
-        line_count = int(self.log_text.index("end-1c").split(".")[0])
-        if line_count > MAX_LOG_LINES:
-            self.log_text.delete("1.0", f"{line_count - MAX_LOG_LINES}.0")
+        # Only query Tcl widget when near the cap (every 500 lines)
+        if self._log_line_count % 500 == 0:
+            line_count = int(self.log_text.index("end-1c").split(".")[0])
+            self._log_line_count = line_count  # Resync counter
+            if line_count > MAX_LOG_LINES:
+                self.log_text.delete("1.0", f"{line_count - MAX_LOG_LINES}.0")
+                self._log_line_count = MAX_LOG_LINES
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
 
@@ -945,6 +950,7 @@ https://github.com/trumank/repak
         self.log_text.config(state=tk.NORMAL)
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state=tk.DISABLED)
+        self._log_line_count = 0
         logging.info("Log cleared")
 
     def show_progress(self, label: str = "Working...") -> None:
@@ -962,7 +968,7 @@ https://github.com/trumank/repak
         self, args: List[str], callback: Optional[Callable[[bool], None]] = None
     ) -> None:
         """Run repak command in a separate thread with cancellation support"""
-        self.cancel_requested = False
+        self._cancel_event.clear()
 
         # Validate AES key if provided
         aes_key = self.aes_key_var.get().strip()
@@ -1004,7 +1010,7 @@ https://github.com/trumank/repak
 
                 if process.stdout:
                     for line in iter(process.stdout.readline, ""):
-                        if self.cancel_requested:
+                        if self._cancel_event.is_set():
                             process.terminate()
                             try:
                                 process.wait(timeout=5)
@@ -1083,6 +1089,8 @@ https://github.com/trumank/repak
             finally:
                 with self._lock:
                     self.current_process = None
+                # Always clear operation flag so UI doesn't deadlock
+                self._end_operation()
                 if process is not None:
                     try:
                         if process.stdout and not process.stdout.closed:
@@ -1090,11 +1098,9 @@ https://github.com/trumank/repak
                         if process.poll() is None:
                             process.terminate()
                             try:
-                                process.wait(
-                                    timeout=5
-                                )  # Wait for process to exit, prevent zombie
+                                process.wait(timeout=5)
                             except subprocess.TimeoutExpired:
-                                process.kill()  # Force kill if terminate didn't work
+                                process.kill()
                                 process.wait()
                     except Exception:
                         pass  # Best effort process cleanup on cancellation
@@ -1243,7 +1249,8 @@ https://github.com/trumank/repak
         args = ["pack", str(validated_dir), str(output_pak)]
         self.run_repak(args, callback=on_complete)
 
-    def do_info(self):
+    def _do_pak_query(self, subcommand: str, progress_label: str) -> None:
+        """Shared logic for do_info and do_list."""
         if not self._try_start_operation():
             messagebox.showwarning(
                 "Warning",
@@ -1266,40 +1273,17 @@ https://github.com/trumank/repak
             )
             return
 
-        def on_complete(success):
+        def on_complete(success: bool) -> None:
             self._end_operation()
 
-        self.show_progress("Getting info...")
-        self.run_repak(["info", str(validated_path)], callback=on_complete)
+        self.show_progress(progress_label)
+        self.run_repak([subcommand, str(validated_path)], callback=on_complete)
 
-    def do_list(self):
-        if not self._try_start_operation():
-            messagebox.showwarning(
-                "Warning",
-                "An operation is already in progress. Please wait for it to complete.",
-            )
-            return
+    def do_info(self) -> None:
+        self._do_pak_query("info", "Getting info...")
 
-        pak_file = self.info_pak_var.get().strip()
-
-        if not pak_file:
-            self._end_operation()
-            messagebox.showwarning("Warning", "Please select a pak file.")
-            return
-
-        validated_path = self._validate_path(pak_file, must_exist=True)
-        if not validated_path:
-            self._end_operation()
-            messagebox.showerror(
-                "Error", f"Invalid or non-existent pak file:\n{pak_file}"
-            )
-            return
-
-        def on_complete(success):
-            self._end_operation()
-
-        self.show_progress("Listing contents...")
-        self.run_repak(["list", str(validated_path)], callback=on_complete)
+    def do_list(self) -> None:
+        self._do_pak_query("list", "Listing contents...")
 
     def do_batch_unpack(self):
         """Unpack all files in the batch list sequentially with cancellation support"""
@@ -1339,7 +1323,7 @@ https://github.com/trumank/repak
             messagebox.showwarning("Warning", "No valid pak files to unpack.")
             return
 
-        self.cancel_requested = False
+        self._cancel_event.clear()
 
         aes_key = self.aes_key_var.get().strip()
         if aes_key and not validate_aes_key(aes_key):
@@ -1361,7 +1345,7 @@ https://github.com/trumank/repak
                     creationflags = subprocess.CREATE_NO_WINDOW
 
                 for i, pak_file in enumerate(validated_files, 1):
-                    if self.cancel_requested:
+                    if self._cancel_event.is_set():
                         skipped_count = total - i + 1
                         self.root.after(
                             0,
@@ -1413,7 +1397,7 @@ https://github.com/trumank/repak
 
                         if process.stdout:
                             for line in iter(process.stdout.readline, ""):
-                                if self.cancel_requested:
+                                if self._cancel_event.is_set():
                                     process.terminate()
                                     try:
                                         process.wait(timeout=5)
@@ -1430,7 +1414,7 @@ https://github.com/trumank/repak
 
                             process.stdout.close()
 
-                        if self.cancel_requested:
+                        if self._cancel_event.is_set():
                             break
 
                         process.wait(timeout=SUBPROCESS_TIMEOUT)
@@ -1479,7 +1463,7 @@ https://github.com/trumank/repak
                 self.root.after(0, self.hide_progress)
                 logging.info(summary)
 
-                if self.cancel_requested:
+                if self._cancel_event.is_set():
                     self.root.after(
                         0,
                         lambda: messagebox.showinfo(
@@ -1690,22 +1674,20 @@ https://github.com/trumank/repak
                 logging.info(f"SHA-256 verified for {filename}")
                 sha256_verified = True
 
-        # SHA-1: git blob hash against GitHub Contents API (fallback, or additional check)
-        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}?ref={tag_name}"
-        request = urllib.request.Request(api_url, headers=headers)
-        with urllib.request.urlopen(request, timeout=30) as response:
-            file_info = json.loads(response.read().decode())
-        expected_sha = file_info.get("sha", "")
-        actual_sha = self._compute_git_blob_sha(content)
-        if actual_sha != expected_sha:
-            raise RuntimeError(
-                f"SHA-1 integrity check failed for {filename}!\n"
-                f"Expected: {expected_sha[:16]}...\n"
-                f"Got: {actual_sha[:16]}..."
-            )
-        logging.info(f"SHA-1 verified for {filename}")
-
+        # SHA-1: git blob hash as fallback when SHA-256 was unavailable
         if not sha256_verified:
+            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filename}?ref={tag_name}"
+            request = urllib.request.Request(api_url, headers=headers)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                file_info = json.loads(response.read().decode())
+            expected_sha = file_info.get("sha", "")
+            actual_sha = self._compute_git_blob_sha(content)
+            if actual_sha != expected_sha:
+                raise RuntimeError(
+                    f"SHA-1 integrity check failed for {filename}!\n"
+                    f"Expected: {expected_sha[:16]}...\n"
+                    f"Got: {actual_sha[:16]}..."
+                )
             logging.info(
                 f"SHA256SUMS not available for {filename}, verified by SHA-1 only"
             )

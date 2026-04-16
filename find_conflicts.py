@@ -15,20 +15,22 @@ from typing import Dict, List, Optional, Any
 SCRIPT_DIR = Path(__file__).parent.resolve()
 UNPACK_DIR = SCRIPT_DIR / "unpackedfiles"
 CONFLICTS_DIR = SCRIPT_DIR / "conflicts"
-HASH_CHUNK_SIZE = 8192
+HASH_CHUNK_SIZE = 65536
+
 
 def get_file_hash(filepath: Path) -> Optional[str]:
     """Return SHA-256 hex digest of file, reading in chunks. Returns None on error."""
     hash_obj = hashlib.sha256()
     try:
-        with open(filepath, 'rb') as f:
+        with open(filepath, "rb") as f:
             # Read in chunks to avoid loading entire file into memory
-            for chunk in iter(lambda: f.read(HASH_CHUNK_SIZE), b''):
+            for chunk in iter(lambda: f.read(HASH_CHUNK_SIZE), b""):
                 hash_obj.update(chunk)
         return hash_obj.hexdigest()
     except (IOError, OSError) as e:
         print(f"Warning: Failed to hash {filepath}: {e}", file=sys.stderr)
         return None
+
 
 def find_cfg_files() -> Dict[str, List[Dict[str, Any]]]:
     """Scan UNPACK_DIR recursively for .cfg files, grouped by filename."""
@@ -46,17 +48,18 @@ def find_cfg_files() -> Dict[str, List[Dict[str, Any]]]:
 
                 # Safety check: ensure relative path has at least one part
                 if not relative.parts:
-                    print(f"Warning: Skipping file with empty relative path: {cfg_path}", file=sys.stderr)
+                    print(
+                        f"Warning: Skipping file with empty relative path: {cfg_path}",
+                        file=sys.stderr,
+                    )
                     continue
 
                 mod_name = relative.parts[0]
 
                 # Store by filename
-                cfg_files[cfg_path.name].append({
-                    'path': cfg_path,
-                    'mod': mod_name,
-                    'relative_path': str(relative)
-                })
+                cfg_files[cfg_path.name].append(
+                    {"path": cfg_path, "mod": mod_name, "relative_path": str(relative)}
+                )
             except ValueError as e:
                 # relative_to can raise ValueError if paths don't match
                 print(f"Warning: Skipping {cfg_path}: {e}", file=sys.stderr)
@@ -68,7 +71,10 @@ def find_cfg_files() -> Dict[str, List[Dict[str, Any]]]:
 
     return cfg_files
 
-def find_conflicts(cfg_files: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
+
+def find_conflicts(
+    cfg_files: Dict[str, List[Dict[str, Any]]],
+) -> Dict[str, Dict[str, Any]]:
     """Return entries from cfg_files where the same filename has multiple distinct content versions."""
     conflicts: Dict[str, Dict[str, Any]] = {}
 
@@ -76,15 +82,20 @@ def find_conflicts(cfg_files: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Dict
         if len(occurrences) < 2:
             continue
 
-        # Check if files are actually different (by hash)
-        hashes: Dict[str, List[Dict[str, Any]]] = {}
+        # Quick size pre-check: if all files share the same size, hash to confirm
+        sizes = set()
         for occ in occurrences:
-            file_hash = get_file_hash(occ['path'])
-            if file_hash is None:
-                continue  # Skip files that failed to hash
-            if file_hash not in hashes:
-                hashes[file_hash] = []
-            hashes[file_hash].append(occ)
+            try:
+                sizes.add(occ["path"].stat().st_size)
+            except OSError:
+                sizes.add(None)
+
+        # Hash all files to count unique versions
+        hashes: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for occ in occurrences:
+            file_hash = get_file_hash(occ["path"])
+            if file_hash is not None:
+                hashes[file_hash].append(occ)
 
         # If all files are identical (or only one could be hashed), no conflict
         if len(hashes) <= 1:
@@ -92,11 +103,12 @@ def find_conflicts(cfg_files: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Dict
 
         # Real conflict - files differ
         conflicts[filename] = {
-            'occurrences': occurrences,
-            'unique_versions': len(hashes)
+            "occurrences": occurrences,
+            "unique_versions": len(hashes),
         }
 
     return conflicts
+
 
 def copy_conflicts_to_folders(conflicts: Dict[str, Dict[str, Any]]) -> Optional[Path]:
     """Copy conflicting files into CONFLICTS_DIR/<basename>/<mod>__<file> layout. Returns None on failure."""
@@ -106,11 +118,17 @@ def copy_conflicts_to_folders(conflicts: Dict[str, Dict[str, Any]]) -> Optional[
         try:
             conflicts_parent = CONFLICTS_DIR.parent.resolve()
             if conflicts_parent != SCRIPT_DIR:
-                print("Error: CONFLICTS_DIR is not in expected location. Aborting.", file=sys.stderr)
+                print(
+                    "Error: CONFLICTS_DIR is not in expected location. Aborting.",
+                    file=sys.stderr,
+                )
                 return None
             shutil.rmtree(CONFLICTS_DIR)
         except PermissionError as e:
-            print(f"Error: Permission denied removing old conflicts directory: {e}", file=sys.stderr)
+            print(
+                f"Error: Permission denied removing old conflicts directory: {e}",
+                file=sys.stderr,
+            )
             return None
         except OSError as e:
             print(f"Error removing old conflicts directory: {e}", file=sys.stderr)
@@ -119,7 +137,10 @@ def copy_conflicts_to_folders(conflicts: Dict[str, Dict[str, Any]]) -> Optional[
     try:
         CONFLICTS_DIR.mkdir()
     except PermissionError as e:
-        print(f"Error: Permission denied creating conflicts directory: {e}", file=sys.stderr)
+        print(
+            f"Error: Permission denied creating conflicts directory: {e}",
+            file=sys.stderr,
+        )
         return None
     except OSError as e:
         print(f"Error creating conflicts directory: {e}", file=sys.stderr)
@@ -131,30 +152,38 @@ def copy_conflicts_to_folders(conflicts: Dict[str, Dict[str, Any]]) -> Optional[
     for filename, info in conflicts.items():
         try:
             # Create folder for this file (remove extension for folder name)
-            folder_name = filename.rsplit('.', 1)[0] if '.' in filename else filename
+            folder_name = filename.rsplit(".", 1)[0] if "." in filename else filename
             # Sanitize folder name to prevent directory traversal
-            folder_name = folder_name.replace('/', '_').replace('\\', '_').replace('..', '_')
+            folder_name = (
+                folder_name.replace("/", "_").replace("\\", "_").replace("..", "_")
+            )
             conflict_folder = CONFLICTS_DIR / folder_name
             conflict_folder.mkdir(exist_ok=True)
 
             # Copy each version with mod name prefix
-            for occ in info['occurrences']:
+            for occ in info["occurrences"]:
                 # Sanitize mod name for filename (remove path separators and other problematic chars)
-                safe_mod_name = (occ['mod']
-                    .replace('/', '_')
-                    .replace('\\', '_')
-                    .replace(':', '_')
-                    .replace('..', '_'))  # Prevent directory traversal patterns
+                safe_mod_name = (
+                    occ["mod"]
+                    .replace("/", "_")
+                    .replace("\\", "_")
+                    .replace(":", "_")
+                    .replace("..", "_")
+                )  # Prevent directory traversal patterns
                 # Also sanitize the filename in case of malicious names
-                safe_filename = filename.replace('/', '_').replace('\\', '_').replace('..', '_')
+                safe_filename = (
+                    filename.replace("/", "_").replace("\\", "_").replace("..", "_")
+                )
                 dest_name = f"{safe_mod_name}__{safe_filename}"
                 dest_path = conflict_folder / dest_name
 
                 try:
-                    shutil.copy2(occ['path'], dest_path)
+                    shutil.copy2(occ["path"], dest_path)
                     copied_count += 1
                 except (IOError, OSError) as e:
-                    print(f"Warning: Failed to copy {occ['path']}: {e}", file=sys.stderr)
+                    print(
+                        f"Warning: Failed to copy {occ['path']}: {e}", file=sys.stderr
+                    )
                     error_count += 1
         except OSError as e:
             print(f"Error processing conflict {filename}: {e}", file=sys.stderr)
@@ -166,6 +195,7 @@ def copy_conflicts_to_folders(conflicts: Dict[str, Dict[str, Any]]) -> Optional[
 
     return CONFLICTS_DIR
 
+
 def main() -> int:
     print("Scanning for .cfg files...")
     cfg_files = find_cfg_files()
@@ -175,7 +205,9 @@ def main() -> int:
     print(f"Found {total_files} .cfg files ({unique_names} unique names)")
 
     if total_files == 0:
-        print("\nNo .cfg files found. Make sure you have unpacked mods in the 'unpackedfiles' directory.")
+        print(
+            "\nNo .cfg files found. Make sure you have unpacked mods in the 'unpackedfiles' directory."
+        )
         return 0
 
     print("\nLooking for conflicts (same filename, different content)...")
@@ -189,9 +221,11 @@ def main() -> int:
     print("-" * 60)
 
     for filename, info in sorted(conflicts.items()):
-        mods = [occ['mod'] for occ in info['occurrences']]
+        mods = [occ["mod"] for occ in info["occurrences"]]
         print(f"\n{filename}")
-        print(f"  {info['unique_versions']} different versions across {len(mods)} mods:")
+        print(
+            f"  {info['unique_versions']} different versions across {len(mods)} mods:"
+        )
         for mod in mods:
             print(f"    - {mod}")
 

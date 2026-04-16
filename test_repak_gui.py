@@ -876,15 +876,15 @@ class TestConfigFileManagement:
 class TestProcessConstants:
     """Test process-related constants"""
 
-    def test_process_poll_interval_defined(self):
-        """PROCESS_POLL_INTERVAL should be defined and positive"""
-        assert hasattr(repak_gui, "PROCESS_POLL_INTERVAL")
-        assert repak_gui.PROCESS_POLL_INTERVAL > 0
-
     def test_is_windows_defined(self):
         """IS_WINDOWS should be defined as boolean"""
         assert hasattr(repak_gui, "IS_WINDOWS")
         assert isinstance(repak_gui.IS_WINDOWS, bool)
+
+    def test_max_log_lines_defined(self):
+        """MAX_LOG_LINES should be defined at module level"""
+        assert hasattr(repak_gui, "MAX_LOG_LINES")
+        assert repak_gui.MAX_LOG_LINES > 0
 
 
 class TestHashChunkSize:

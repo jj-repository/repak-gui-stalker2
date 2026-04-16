@@ -9,9 +9,14 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@v6
 
@@ -19,6 +24,8 @@ jobs:
       uses: actions/setup-python@v6
       with:
         python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: 'requirements.txt'
 
     - name: Install dependencies
       run: |
@@ -28,6 +35,10 @@ jobs:
 
     - name: Verify checksum file is current
       run: |
+        if [ ! -f checksums.sha256 ]; then
+          echo "::error::checksums.sha256 not found"
+          exit 1
+        fi
         sha256sum -c checksums.sha256
 
     - name: Build Linux executable
@@ -42,6 +53,9 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@v6
 
@@ -49,6 +63,8 @@ jobs:
       uses: actions/setup-python@v6
       with:
         python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: 'requirements.txt'
 
     - name: Install dependencies
       run: |
@@ -69,6 +85,7 @@ jobs:
   release:
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
