@@ -122,14 +122,6 @@ jobs:
           SHA256SUMS \
           --title "${{ github.ref_name }}" \
           --notes "$(cat <<'NOTES'
-        ## Downloads
-
-        | File | Platform |
-        |------|----------|
-        | **RepakGUI.exe** | Windows |
-        | **RepakGUI-Linux** | Linux |
-        | **SHA256SUMS** | Checksums |
-
         ## Installation
 
         ### Windows
@@ -145,5 +137,15 @@ jobs:
         Built automatically with GitHub Actions
         NOTES
         )"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Prepend download disclaimer to release notes
+      run: |
+        TAG="${{ github.ref_name }}"
+        DISCLAIMER=$'## 📥 Downloads\n\n**Just grab one file:**\n- **Windows** → `RepakGUI.exe`\n- **Linux** → `RepakGUI-Linux`\n\nThe `SHA256SUMS` file is an optional checksum for verifying the download — you don\'t need it to use the app.\n\n---\n\n'
+        BODY=$(gh release view "$TAG" --json body -q .body)
+        printf '%s%s' "$DISCLAIMER" "$BODY" > /tmp/release_notes.md
+        gh release edit "$TAG" --notes-file /tmp/release_notes.md
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
