@@ -5,8 +5,8 @@
 # tkinterdnd2>=0.3.0
 
 # Build dependencies (for creating executables)
-pyinstaller>=6.20.0
+pyinstaller>=6.21.0
 
 # Development dependencies
-pytest>=9.0.3
+pytest>=9.1.0
 pytest-cov>=7.1.0
